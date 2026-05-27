@@ -195,6 +195,20 @@ to-all-pdfs:
             img2pdf "$dir"/* --output "$out"; \
         done'
 
+# Pack every artifacts/*-report/overlay/ directory into a single PDF so
+# you can scrub through and see which pixels despeckle actually removed
+# (highlighted in red, the rest is the cleaned page). One file per book.
+to-overlay-pdfs:
+    {{docker_run}} bash -c '\
+        set -euo pipefail; \
+        for dir in artifacts/*-report; do \
+            [ -d "$dir/overlay" ] || continue; \
+            book="$(basename "$dir" -report)"; \
+            out="artifacts/${book}-overlay.pdf"; \
+            echo "==> $dir/overlay -> $out"; \
+            img2pdf "$dir/overlay"/*.png --output "$out"; \
+        done'
+
 # ----- run -----
 
 # Process a directory of bitonal images.

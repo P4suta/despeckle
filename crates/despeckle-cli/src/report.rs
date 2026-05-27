@@ -104,8 +104,12 @@ fn save_overlay_as_png(before: &GrayImage, after: &GrayImage, path: &Path) -> Re
     Ok(())
 }
 
-/// Render an RGB image that shows `after` in grayscale, with pixels that
-/// went from black-in-`before` → white-in-`after` highlighted in red.
+/// Render an RGB dry-run preview: `before` in grayscale, with every
+/// pixel that despeckle would remove (black-in-`before` →
+/// white-in-`after`) highlighted in red. Eyeballing this image answers
+/// "what *would* despeckle delete from this page?" — the input is still
+/// visible underneath, so you can see whether a red splotch is
+/// genuinely a speckle or a ruby stroke being eaten.
 fn render_overlay(before: &GrayImage, after: &GrayImage) -> RgbImage {
     let width = before.width().min(after.width());
     let height = before.height().min(after.height());
@@ -115,9 +119,9 @@ fn render_overlay(before: &GrayImage, after: &GrayImage) -> RgbImage {
             let before_px = before.get_pixel(x, y).0[0];
             let after_px = after.get_pixel(x, y).0[0];
             let rgb = if before_px == 0 && after_px == 255 {
-                Rgb([255, 80, 80])
+                Rgb([255, 0, 0])
             } else {
-                let g = after_px;
+                let g = before_px;
                 Rgb([g, g, g])
             };
             out.put_pixel(x, y, rgb);
