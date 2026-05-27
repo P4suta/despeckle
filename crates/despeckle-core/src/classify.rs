@@ -35,7 +35,13 @@ pub struct Thresholds {
 const GUTTER_MULTIPLIER: u32 = 3;
 
 /// Isolation distance as a fraction of the median character height.
-const ISO_RATIO: f32 = 0.15;
+///
+/// Conservative on purpose (0.5 ≈ half a glyph): a stray 1-2 px chip
+/// off a real glyph stroke usually has another glyph component well
+/// within half a character height, so the protection rule keeps it,
+/// while a genuinely isolated speckle in the gutter is way farther
+/// than that from anything.
+const ISO_RATIO: f32 = 0.5;
 
 /// Fallback percentile (0.5 %) used when no histogram valley is detectable.
 const FALLBACK_PERCENTILE: f64 = 0.005;

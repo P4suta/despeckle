@@ -389,6 +389,7 @@ dependencies = [
  "kiddo",
  "memmap2",
  "mimalloc",
+ "png",
  "proptest",
  "thiserror",
  "tracing",

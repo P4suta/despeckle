@@ -18,10 +18,12 @@ mod error;
 mod io;
 mod mask;
 mod pipeline;
+mod refine;
 
 pub use crate::classify::{Decision, Thresholds, auto_thresholds, classify};
 pub use crate::components::{BoundingBox, Component, LabelMap, Labelling, label};
 pub use crate::error::DespeckleError;
 pub use crate::io::{load_bitonal, save_bitonal};
 pub use crate::mask::{ColumnBand, ColumnMask, build_column_mask};
-pub use crate::pipeline::{ProcessResult, process_page};
+pub use crate::pipeline::{ProcessOptions, ProcessResult, process_page, process_page_with};
+pub use crate::refine::{fill_holes, smooth_edges};

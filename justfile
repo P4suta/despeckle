@@ -179,35 +179,61 @@ py-fmt-check:
 py-typecheck:
     {{mypy}} tools
 
+## PDF packaging ---------------------------------------------------------
+##
+## PBM files do not carry a DPI tag, so img2pdf falls back to 96 dpi and
+## the resulting PDF balloons to ~30 cm wide with the raster stretched
+## across it — the page looks jaggy at any zoom level. We pass the input
+## DPI explicitly via `--imgsize <DPI>dpix<DPI>dpi`, which makes the PDF
+## page size match the physical page of the source scan. Drive it via
+## `DESPECKLE_DPI=600` (default) or override per-book.
+
+dpi := env_var_or_default("DESPECKLE_DPI", "600")
+
 # Roll a directory of PBM/PNG pages into a single PDF for human review.
 # Example: `just to-pdf artifacts/russell-cleaned artifacts/russell-cleaned.pdf`
 to-pdf in out:
-    {{sh}} 'mkdir -p "$(dirname "{{out}}")" && img2pdf {{in}}/* --output {{out}}'
+    {{sh}} 'mkdir -p "$(dirname "{{out}}")" && img2pdf --imgsize "{{dpi}}dpix{{dpi}}dpi" {{in}}/* --output {{out}}'
 
 # Bulk-pack every artifacts/*-cleaned/ directory into artifacts/*-cleaned.pdf.
 to-all-pdfs:
-    {{docker_run}} bash -c '\
+    {{docker_run}} bash -c "\
         set -euo pipefail; \
         for dir in artifacts/*-cleaned; do \
-            [ -d "$dir" ] || continue; \
-            out="${dir}.pdf"; \
-            echo "==> $dir -> $out"; \
-            img2pdf "$dir"/* --output "$out"; \
-        done'
+            [ -d \"\$dir\" ] || continue; \
+            out=\"\${dir}.pdf\"; \
+            echo \"==> \$dir -> \$out @ {{dpi}} dpi\"; \
+            img2pdf --imgsize \"{{dpi}}dpix{{dpi}}dpi\" \"\$dir\"/* --output \"\$out\"; \
+        done"
 
 # Pack every artifacts/*-report/overlay/ directory into a single PDF so
 # you can scrub through and see which pixels despeckle actually removed
-# (highlighted in red, the rest is the cleaned page). One file per book.
+# (highlighted in red over the original page). One file per book.
 to-overlay-pdfs:
-    {{docker_run}} bash -c '\
+    {{docker_run}} bash -c "\
         set -euo pipefail; \
         for dir in artifacts/*-report; do \
-            [ -d "$dir/overlay" ] || continue; \
-            book="$(basename "$dir" -report)"; \
-            out="artifacts/${book}-overlay.pdf"; \
-            echo "==> $dir/overlay -> $out"; \
-            img2pdf "$dir/overlay"/*.png --output "$out"; \
-        done'
+            [ -d \"\$dir/overlay\" ] || continue; \
+            book=\"\$(basename \"\$dir\" -report)\"; \
+            out=\"artifacts/\${book}-overlay.pdf\"; \
+            echo \"==> \$dir/overlay -> \$out @ {{dpi}} dpi\"; \
+            img2pdf --imgsize \"{{dpi}}dpix{{dpi}}dpi\" \"\$dir/overlay\"/*.png --output \"\$out\"; \
+        done"
+
+# Extract every embedded 1-bit image from a scan PDF as TIFF, preserving
+# the original pixel grid exactly (no re-rasterisation, no re-threshold).
+# `pdftoppm -mono` was lossy on JBIG2-encoded scans (~1 % spurious pixel
+# flips that PDF.js renders as jaggies). `pdfimages -tiff` decodes the
+# source codec and writes the bit pattern as 1-bit BlackIsZero TIFF,
+# which `img2pdf` re-encodes as CCITT-G4 inside the resulting PDF — so
+# both the on-disk size and the visual quality stay close to the
+# original ScanSnap output.
+#
+# Example: `just extract path/to/book.pdf private/scans/book`
+extract pdf out_dir:
+    @mkdir -p {{out_dir}}
+    pdfimages -tiff {{pdf}} {{out_dir}}/page
+    @echo "extracted $(ls {{out_dir}} | wc -l) TIFF pages to {{out_dir}}"
 
 # ----- run -----
 

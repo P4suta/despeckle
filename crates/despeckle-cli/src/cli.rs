@@ -37,6 +37,14 @@ pub(crate) struct Args {
     /// Overwrite output directory contents if non-empty.
     #[arg(long)]
     pub(crate) force: bool,
+
+    /// Skip the hole-fill post-pass (default: enabled).
+    #[arg(long)]
+    pub(crate) no_fill_holes: bool,
+
+    /// Skip the 3×3 median smoothing post-pass (default: enabled).
+    #[arg(long)]
+    pub(crate) no_smooth: bool,
 }
 
 /// Output image format selection.

@@ -238,14 +238,230 @@ pub fn save_bitonal(img: &GrayImage, path: &Path) -> Result<(), DespeckleError> 
         .and_then(OsStr::to_str)
         .map(str::to_ascii_lowercase);
 
-    if extension.as_deref() == Some("pbm") {
-        write_pbm_p4(img, path)
-    } else {
-        img.save(path).map_err(|source| DespeckleError::Image {
+    match extension.as_deref() {
+        Some("pbm") => write_pbm_p4(img, path),
+        Some("png") => write_png_1bit(img, path),
+        Some("tif" | "tiff") => write_tiff_1bit(img, path),
+        _ => img.save(path).map_err(|source| DespeckleError::Image {
             path: path.into(),
             source,
-        })
+        }),
     }
+}
+
+/// Encode a bitonal `GrayImage` as a 1-bit `BlackIsZero` **uncompressed**
+/// TIFF (Compression = 1).
+///
+/// `tiff` crate v0.11 / `image::codecs::tiff::TiffEncoder` do not
+/// support `L1` encoding (`data.len()` must be `width * height` bytes —
+/// they ignore `BITS_PER_SAMPLE = [1]` when sizing the buffer), so this
+/// writer is the missing 1-bit branch the upstream crates lack rather
+/// than a re-implementation of any existing API. It emits the minimum
+/// TIFF byte stream — one IFD with eight tags followed by the packed
+/// strip data.
+///
+/// We never set CCITT-G4 in the TIFF itself. `img2pdf` notices any
+/// 1-bit TIFF and re-encodes it as CCITT-G4 inside the resulting PDF
+/// regardless of on-disk compression, so writing the TIFF uncompressed
+/// keeps the encoder trivial.
+fn write_tiff_1bit(img: &GrayImage, path: &Path) -> Result<(), DespeckleError> {
+    let path_buf: PathBuf = path.into();
+    let file = std::fs::File::create(path).map_err(|source| DespeckleError::Io {
+        path: path_buf.clone(),
+        source,
+    })?;
+    let mut writer = BufWriter::new(file);
+    write_tiff_inner(&mut writer, img).map_err(|source| DespeckleError::Io {
+        path: path_buf.clone(),
+        source,
+    })?;
+    writer.flush().map_err(|source| DespeckleError::Io {
+        path: path_buf,
+        source,
+    })
+}
+
+fn write_tiff_inner(w: &mut impl Write, img: &GrayImage) -> std::io::Result<()> {
+    // IFD layout: 2-byte count + 8 × 12-byte entries + 4-byte next-IFD
+    // pointer = 102 bytes, starting at offset 8 → strip data starts at
+    // offset 110.
+    const ENTRIES: u16 = 8;
+
+    let width = img.width();
+    let height = img.height();
+    let width_usize = width as usize;
+    let bytes_per_row = width_usize.div_ceil(8);
+    let strip_bytes = bytes_per_row.saturating_mul(height as usize);
+
+    // Header: little-endian, magic 42, IFD at byte 8.
+    w.write_all(b"II")?;
+    w.write_all(&42u16.to_le_bytes())?;
+    w.write_all(&8u32.to_le_bytes())?;
+
+    let ifd_end = 8u32 + 2 + u32::from(ENTRIES) * 12 + 4;
+    let strip_offset = ifd_end;
+
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "strip_bytes fits in u32 for any scan page (4 GB worth of 1-bit pixels)"
+    )]
+    let strip_bytes_u32 = strip_bytes as u32;
+
+    w.write_all(&ENTRIES.to_le_bytes())?;
+
+    // IFD entries must be sorted by tag number.
+    write_short_entry(w, 256, width.try_into().unwrap_or(u16::MAX))?; // ImageWidth
+    write_short_entry(w, 257, height.try_into().unwrap_or(u16::MAX))?; // ImageLength
+    write_short_entry(w, 258, 1)?; // BitsPerSample
+    write_short_entry(w, 259, 1)?; // Compression = none
+    // PhotometricInterpretation: 1 = BlackIsZero (bit 0 = black, bit 1
+    // = white), matches Luma<u8> polarity and the pack_png_byte
+    // invariant. Value 0 would mean WhiteIsZero and invert the page.
+    write_short_entry(w, 262, 1)?; // PhotometricInterpretation
+    write_long_entry(w, 273, strip_offset)?; // StripOffsets
+    write_short_entry(w, 277, 1)?; // SamplesPerPixel
+    write_long_entry(w, 279, strip_bytes_u32)?; // StripByteCounts
+
+    w.write_all(&[0u8; 4])?; // next-IFD pointer = 0
+
+    // Strip data: packed bit pattern (1 byte = 8 pixels, MSB first).
+    let pixels = img.as_raw();
+    let full_bytes = width_usize / 8;
+    let remainder = width_usize & 7;
+    let mut row = vec![0u8; bytes_per_row];
+
+    for y in 0..height as usize {
+        row.fill(0);
+        let row_in = &pixels[y * width_usize..(y + 1) * width_usize];
+        for (byte_idx, dst) in row[..full_bytes].iter_mut().enumerate() {
+            let chunk_start = byte_idx * 8;
+            *dst = pack_png_byte(&row_in[chunk_start..chunk_start + 8]);
+        }
+        if remainder > 0 {
+            let chunk_start = full_bytes * 8;
+            row[full_bytes] = pack_png_byte_partial(&row_in[chunk_start..], remainder);
+        }
+        w.write_all(&row)?;
+    }
+
+    Ok(())
+}
+
+/// Write a 12-byte TIFF IFD entry holding a single SHORT (u16) value.
+fn write_short_entry(w: &mut impl Write, tag: u16, value: u16) -> std::io::Result<()> {
+    w.write_all(&tag.to_le_bytes())?;
+    w.write_all(&3u16.to_le_bytes())?; // type = SHORT
+    w.write_all(&1u32.to_le_bytes())?; // count
+    w.write_all(&value.to_le_bytes())?;
+    w.write_all(&[0u8, 0])?; // pad the 4-byte value field
+    Ok(())
+}
+
+/// Write a 12-byte TIFF IFD entry holding a single LONG (u32) value.
+fn write_long_entry(w: &mut impl Write, tag: u16, value: u32) -> std::io::Result<()> {
+    w.write_all(&tag.to_le_bytes())?;
+    w.write_all(&4u16.to_le_bytes())?; // type = LONG
+    w.write_all(&1u32.to_le_bytes())?; // count
+    w.write_all(&value.to_le_bytes())?;
+    Ok(())
+}
+
+/// Encode a bitonal `GrayImage` as a 1-bit grayscale PNG.
+///
+/// The `image` crate's PNG encoder did not (as of 0.25) accept the L1
+/// color type, even though L1 is in the PNG spec. We sidestep it by
+/// dropping straight to the `png` crate, which lets us pack 8 pixels
+/// per byte and produce a PNG roughly 8× smaller than `Luma<u8>` →
+/// 8-bit grayscale fallback would yield. The downstream `img2pdf`
+/// embeds the byte stream as-is, so the cleaned PDF lands close to the
+/// original's file size (e.g. Russell: 17 MB → ~6 MB at 600 DPI).
+///
+/// PNG polarity matches `Luma<u8>`: bit 0 = black, bit 1 = white. PBM is
+/// the opposite — see [`write_pbm_p4`] — so the packer here is a
+/// straight `set bit when pixel is white` loop.
+fn write_png_1bit(img: &GrayImage, path: &Path) -> Result<(), DespeckleError> {
+    let path_buf: PathBuf = path.into();
+    let file = std::fs::File::create(path).map_err(|source| DespeckleError::Io {
+        path: path_buf.clone(),
+        source,
+    })?;
+    let writer = BufWriter::new(file);
+
+    let width = img.width();
+    let height = img.height();
+    let width_usize = width as usize;
+    let bytes_per_row = width_usize.div_ceil(8);
+    let pixels = img.as_raw();
+
+    let mut packed = vec![0u8; bytes_per_row * height as usize];
+    let full_bytes = width_usize / 8;
+    let remainder = width_usize & 7;
+
+    for y in 0..height as usize {
+        let row_in = &pixels[y * width_usize..(y + 1) * width_usize];
+        let row_out = &mut packed[y * bytes_per_row..(y + 1) * bytes_per_row];
+
+        for (byte_idx, dst) in row_out[..full_bytes].iter_mut().enumerate() {
+            let chunk_start = byte_idx * 8;
+            *dst = pack_png_byte(&row_in[chunk_start..chunk_start + 8]);
+        }
+        if remainder > 0 {
+            let chunk_start = full_bytes * 8;
+            row_out[full_bytes] = pack_png_byte_partial(&row_in[chunk_start..], remainder);
+        }
+    }
+
+    let mut encoder = png::Encoder::new(writer, width, height);
+    encoder.set_color(png::ColorType::Grayscale);
+    encoder.set_depth(png::BitDepth::One);
+    let mut png_writer = encoder
+        .write_header()
+        .map_err(|source| png_to_despeckle_error(&source, &path_buf))?;
+    png_writer
+        .write_image_data(&packed)
+        .map_err(|source| png_to_despeckle_error(&source, &path_buf))?;
+    Ok(())
+}
+
+fn png_to_despeckle_error(err: &png::EncodingError, path: &Path) -> DespeckleError {
+    DespeckleError::Io {
+        path: path.into(),
+        source: std::io::Error::other(err.to_string()),
+    }
+}
+
+/// Pack 8 consecutive grayscale pixels into one PNG L1 byte. Bit 7 is the
+/// leftmost pixel; `1` means white (PNG polarity, opposite of PBM).
+#[inline]
+fn pack_png_byte(chunk: &[u8]) -> u8 {
+    debug_assert!(chunk.len() >= 8);
+    let b0 = u8::from(chunk[0] != 0) << 7;
+    let b1 = u8::from(chunk[1] != 0) << 6;
+    let b2 = u8::from(chunk[2] != 0) << 5;
+    let b3 = u8::from(chunk[3] != 0) << 4;
+    let b4 = u8::from(chunk[4] != 0) << 3;
+    let b5 = u8::from(chunk[5] != 0) << 2;
+    let b6 = u8::from(chunk[6] != 0) << 1;
+    let b7 = u8::from(chunk[7] != 0);
+    b0 | b1 | b2 | b3 | b4 | b5 | b6 | b7
+}
+
+/// Same as `pack_png_byte`, for a tail row that is not a multiple of 8
+/// pixels wide. Bits beyond `len` are left as zero (black) — they fall
+/// outside the image width and PNG decoders ignore them.
+fn pack_png_byte_partial(chunk: &[u8], len: usize) -> u8 {
+    let mut byte = 0u8;
+    for (i, &px) in chunk.iter().enumerate().take(len) {
+        if px != 0 {
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "i < 8 by take(len) where len ≤ 7 in the remainder path"
+            )]
+            let shift = 7 - i as u32;
+            byte |= 1u8 << shift;
+        }
+    }
+    byte
 }
 
 /// Encode a bitonal `GrayImage` as a P4 (binary bitmap) PBM file.

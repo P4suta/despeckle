@@ -23,6 +23,7 @@ indicatif = { version = "0.18", features = ["rayon"] }
 kiddo = "5"
 memmap2 = "0.9"
 mimalloc = { version = "0.1", default-features = false }
+png = "0.18"
 predicates = "3"
 proptest = "1"
 rayon = "1"

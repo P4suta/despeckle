@@ -2,17 +2,42 @@
 //!
 //! [`process_page`] is the composition of every other module in the crate:
 //!
-//! `label → build_column_mask → auto_thresholds → classify → render`
+//! `label → build_column_mask → auto_thresholds → classify → paint_white`
+//! `  → fill_holes → smooth_edges`
 //!
 //! Each step is a pure function; `process_page` simply threads the values
 //! through. The output image is the input with every `Decision::Remove`
-//! component's pixels repainted to white.
+//! component's pixels repainted to white, then with isolated white holes
+//! inside glyph strokes filled black and the result lightly smoothed.
 
 use image::GrayImage;
 
 use crate::classify::{Decision, auto_thresholds, classify};
 use crate::components::{Labelling, label};
 use crate::mask::build_column_mask;
+use crate::refine::{fill_holes, smooth_edges};
+
+/// Which post-despeckle refinement steps to apply.
+///
+/// Both `fill_holes` and `smooth_edges` operate on the despeckled
+/// image, in 1-bit space, so they keep the downstream PBM / TIFF
+/// round-trip and CCITT-G4 PDF embed intact. Default: both on.
+#[derive(Debug, Clone, Copy)]
+pub struct ProcessOptions {
+    /// Fill isolated white holes inside black glyph strokes.
+    pub fill_holes: bool,
+    /// Apply a 3 × 3 majority-vote median filter to clean up jagged edges.
+    pub smooth_edges: bool,
+}
+
+impl Default for ProcessOptions {
+    fn default() -> Self {
+        Self {
+            fill_holes: true,
+            smooth_edges: true,
+        }
+    }
+}
 
 /// Outcome of processing a single page.
 #[derive(Debug)]
@@ -22,6 +47,10 @@ pub struct ProcessResult {
     pub image: GrayImage,
     /// Number of connected components removed as dust.
     pub components_removed: usize,
+    /// Number of white holes filled by [`fill_holes`].
+    pub holes_filled: usize,
+    /// Number of pixels flipped by [`smooth_edges`].
+    pub smoothed_pixels: usize,
 }
 
 /// Minimum component count for despeckling to even attempt removal.
@@ -33,18 +62,49 @@ pub struct ProcessResult {
 /// degenerate path is short-circuited here.
 const MIN_COMPONENTS_FOR_REMOVAL: usize = 8;
 
-/// Process a single page image.
+/// Process a single page with default options (both refinement steps on).
 #[must_use]
 pub fn process_page(input: GrayImage) -> ProcessResult {
+    process_page_with(input, ProcessOptions::default())
+}
+
+/// Process a single page, choosing which refinement steps to apply.
+#[must_use]
+pub fn process_page_with(input: GrayImage, opts: ProcessOptions) -> ProcessResult {
+    // ----- despeckle -----
     let labelling = label(&input);
     let component_count = labelling.components.len();
     tracing::debug!(components = component_count, "process_page CCs");
-    if component_count < MIN_COMPONENTS_FOR_REMOVAL {
-        return ProcessResult {
-            image: input,
-            components_removed: 0,
-        };
+
+    let (despeckled, components_removed) = if component_count < MIN_COMPONENTS_FOR_REMOVAL {
+        (input, 0)
+    } else {
+        despeckle_with_labelling(input, labelling)
+    };
+
+    // ----- fill_holes -----
+    let (after_fill, holes_filled) = if opts.fill_holes {
+        fill_holes(despeckled)
+    } else {
+        (despeckled, 0)
+    };
+
+    // ----- smooth_edges -----
+    let (after_smooth, smoothed_pixels) = if opts.smooth_edges {
+        smooth_edges(after_fill)
+    } else {
+        (after_fill, 0)
+    };
+
+    ProcessResult {
+        image: after_smooth,
+        components_removed,
+        holes_filled,
+        smoothed_pixels,
     }
+}
+
+fn despeckle_with_labelling(input: GrayImage, labelling: Labelling) -> (GrayImage, usize) {
     let Labelling {
         components,
         labels,
@@ -59,8 +119,6 @@ pub fn process_page(input: GrayImage) -> ProcessResult {
     // Branch-free paint LUT: `255` for labels marked for removal, `0`
     // otherwise. The inner loop is `pixel |= lut[label]`, which ORs 255
     // (→ white) onto removed pixels and 0 (no-op) onto kept pixels.
-    // This compiles into a straight gather + OR with no per-pixel
-    // condition, freeing LLVM to vectorise.
     let mut remove_lut = vec![0u8; (max_label as usize) + 1];
     let mut components_removed = 0usize;
     for (decision, label_id) in decisions.iter().zip(&labels) {
@@ -74,11 +132,7 @@ pub fn process_page(input: GrayImage) -> ProcessResult {
     if components_removed > 0 {
         paint_white(&mut output, &label_map, &remove_lut);
     }
-
-    ProcessResult {
-        image: output,
-        components_removed,
-    }
+    (output, components_removed)
 }
 
 /// Walk both buffers as raw slices (same row-major layout, same length)

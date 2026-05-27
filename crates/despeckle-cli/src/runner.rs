@@ -21,7 +21,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 
 use anyhow::{Context, Result};
-use despeckle_core::{ProcessResult, load_bitonal, process_page, save_bitonal};
+use despeckle_core::{
+    ProcessOptions, ProcessResult, load_bitonal, process_page_with, save_bitonal,
+};
 use globset::{Glob, GlobMatcher};
 use indicatif::{ProgressBar, ProgressStyle};
 use walkdir::WalkDir;
@@ -73,6 +75,10 @@ pub(crate) fn run(args: &Args) -> Result<()> {
     let input_root = args.input_dir.as_path();
     let output_root = args.output_dir.as_path();
     let format = args.format;
+    let opts = ProcessOptions {
+        fill_holes: !args.no_fill_holes,
+        smooth_edges: !args.no_smooth,
+    };
 
     let total_removed: usize = thread::scope(|s| -> usize {
         // `collect` is mandatory here — without it the `Iterator::map`
@@ -89,7 +95,7 @@ pub(crate) fn run(args: &Args) -> Result<()> {
                     loop {
                         let idx = cursor_ref.fetch_add(1, Ordering::Relaxed);
                         let Some(src) = files_ref.get(idx) else { break };
-                        match process_one(src, input_root, output_root, format, report_ref) {
+                        match process_one(src, input_root, output_root, format, opts, report_ref) {
                             Ok(n) => local += n,
                             Err(err) => tracing::warn!("page failed: {err:#}"),
                         }
@@ -179,6 +185,7 @@ fn process_one(
     input_root: &Path,
     output_root: &Path,
     format: OutputFormat,
+    opts: ProcessOptions,
     report: Option<&Report>,
 ) -> Result<usize> {
     let before = load_bitonal(src).with_context(|| format!("failed to load {}", src.display()))?;
@@ -186,8 +193,17 @@ fn process_one(
     let ProcessResult {
         image,
         components_removed,
+        holes_filled,
+        smoothed_pixels,
         ..
-    } = process_page(before);
+    } = process_page_with(before, opts);
+    tracing::debug!(
+        page = %src.display(),
+        components_removed,
+        holes_filled,
+        smoothed_pixels,
+        "page processed"
+    );
 
     let dest = mirror_destination(src, input_root, output_root, format)?;
     if let Some(parent) = dest.parent() {
