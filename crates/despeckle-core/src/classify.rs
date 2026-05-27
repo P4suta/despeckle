@@ -198,35 +198,44 @@ fn decide_one(
 /// Nearest-neighbor distance (Euclidean) from each centroid to its
 /// closest *other* centroid.
 ///
-/// Implementation: build a 2-D `kiddo` KD-tree once, then ask each centroid
-/// for its two nearest hits — the first hit is itself with distance 0,
-/// the second is the neighbor. `O(n log n)` build + `O(log n)` per query,
-/// which collapses the previous all-pairs `O(n²)` loop from ~1.1 ms to
-/// roughly 0.1 ms on typical novel pages (samply confirms).
+/// Implementation: build a 2-D `kiddo` `ImmutableKdTree` once from the
+/// centroid slice, then query each centroid for its two nearest hits —
+/// the first hit is itself with distance 0, the second is the neighbor.
+/// `O(n log n)` build + `O(log n)` per query.
+///
+/// `ImmutableKdTree` is used (instead of the incremental `KdTree`) because
+/// it sizes its buckets at build time from the actual point distribution.
+/// The incremental tree has a *compile-time* bucket size and panics if
+/// more items than that fit on a single axis — a real-world failure mode
+/// on novel pages, where vertical typesetting lines up dozens of CC
+/// centroids on the same `x` to within float rounding.
 fn nearest_neighbor_distances(components: &[Component]) -> Vec<f32> {
     use kiddo::SquaredEuclidean;
-    use kiddo::float::kdtree::KdTree;
+    use kiddo::immutable::float::kdtree::ImmutableKdTree;
 
     let n = components.len();
     if n < 2 {
         return vec![f32::INFINITY; n];
     }
 
-    // <axis type, content index type, dimensions, bucket size, ...>
-    let mut tree: KdTree<f32, u32, 2, 32, u32> = KdTree::with_capacity(n);
-    for (idx, c) in components.iter().enumerate() {
-        #[allow(
-            clippy::cast_possible_truncation,
-            reason = "n bounded by per-page CC count, well below u32::MAX"
-        )]
-        let item = idx as u32;
-        tree.add(&[c.centroid.0, c.centroid.1], item);
-    }
+    // `nearest_n` wants the count as `NonZero<usize>`; build it once.
+    #[allow(clippy::unwrap_used, reason = "literal 2 is statically non-zero")]
+    let two = std::num::NonZero::<usize>::new(2).unwrap();
 
-    components
+    let points: Vec<[f32; 2]> = components
         .iter()
-        .map(|c| {
-            let hits = tree.nearest_n::<SquaredEuclidean>(&[c.centroid.0, c.centroid.1], 2);
+        .map(|c| [c.centroid.0, c.centroid.1])
+        .collect();
+    // The `ImmutableKdTree` sizes its leaves at build time from the actual
+    // distribution, so a generous bucket cap (256) accommodates any number
+    // of vertically-aligned centroids without panicking and still keeps
+    // queries log-time.
+    let tree: ImmutableKdTree<f32, u32, 2, 256> = ImmutableKdTree::new_from_slice(&points);
+
+    points
+        .iter()
+        .map(|point| {
+            let hits = tree.nearest_n::<SquaredEuclidean>(point, two);
             // hit 0 is self at distance 0; hit 1 is the nearest neighbor.
             hits.get(1).map_or(f32::INFINITY, |hit| hit.distance.sqrt())
         })
