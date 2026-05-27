@@ -149,8 +149,51 @@ profile-summary:
     cargo build --profile release-perf -p despeckle-cli
     samply record --save-only -o artifacts/profile.json -- \
         ./target/release-perf/despeckle {{sample_input}} {{sample_output}} --force
-    python3 tools/samply_top.py artifacts/profile.json \
-        ./target/release-perf/despeckle | tee artifacts/profile-summary.md
+    {{sh}} "python3 tools/samply_top.py artifacts/profile.json \
+        ./target/release-perf/despeckle | tee artifacts/profile-summary.md"
+
+# ----- Python tooling (host-side analysis + PDF packagers) -----
+#
+# All Python code lives under tools/ and is driven by uv + ruff + mypy
+# baked into the dev image; no host pip required. `pyproject.toml` at
+# the workspace root is the single source of truth for Python config.
+
+uv := if inside == "1" { "uv" } else { docker_run + " uv" }
+ruff := if inside == "1" { "ruff" } else { docker_run + " ruff" }
+mypy := if inside == "1" { "mypy" } else { docker_run + " uv tool run mypy" }
+img2pdf := if inside == "1" { "img2pdf" } else { docker_run + " img2pdf" }
+
+# Lint Python tools/ via ruff (no auto-fix).
+py-lint:
+    {{ruff}} check tools
+
+# Auto-fix + format Python tools/.
+py-fmt:
+    {{ruff}} check --fix tools
+    {{ruff}} format tools
+
+py-fmt-check:
+    {{ruff}} check tools
+    {{ruff}} format --check tools
+
+py-typecheck:
+    {{mypy}} tools
+
+# Roll a directory of PBM/PNG pages into a single PDF for human review.
+# Example: `just to-pdf artifacts/russell-cleaned artifacts/russell-cleaned.pdf`
+to-pdf in out:
+    {{sh}} 'mkdir -p "$(dirname "{{out}}")" && img2pdf {{in}}/* --output {{out}}'
+
+# Bulk-pack every artifacts/*-cleaned/ directory into artifacts/*-cleaned.pdf.
+to-all-pdfs:
+    {{docker_run}} bash -c '\
+        set -euo pipefail; \
+        for dir in artifacts/*-cleaned; do \
+            [ -d "$dir" ] || continue; \
+            out="${dir}.pdf"; \
+            echo "==> $dir -> $out"; \
+            img2pdf "$dir"/* --output "$out"; \
+        done'
 
 # ----- run -----
 
@@ -271,3 +314,9 @@ _hook-actionlint +files:
 _hook-docs-drift:
     just docs
     {{sh}} "git diff --quiet docs/ crates/despeckle-core/README.md || (echo 'docs drift detected — run \\`just docs\\` and commit' >&2; exit 1)"
+
+_hook-ruff-format +files:
+    {{ruff}} format {{files}}
+
+_hook-ruff-check +files:
+    {{ruff}} check --fix {{files}}

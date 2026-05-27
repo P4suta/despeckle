@@ -47,6 +47,18 @@ pre-commit:
       run: just _hook-yamlfmt {staged_files}
       stage_fixed: true
 
+    ruff-format:
+      tags: format
+      glob: "*.py"
+      run: just _hook-ruff-format {staged_files}
+      stage_fixed: true
+
+    ruff-check:
+      tags: format
+      glob: "*.py"
+      run: just _hook-ruff-check {staged_files}
+      stage_fixed: true
+
     typos-fix:
       tags: spell
       run: just _hook-typos-fix {staged_files}
@@ -68,6 +80,11 @@ pre-commit:
       glob: "*.rs"
       run: just rustdoc-check
 
+    mypy:
+      tags: lint
+      glob: "*.py"
+      run: just py-typecheck
+
 pre-push:
   # CI のゲートと検出範囲を揃える: PR を出してから CI で初めて怒られるのを防ぐ。
   # 重要 (lefthook v2): pre-push の `@{push}` 解決が空 (新規 branch 初回 push /
@@ -88,5 +105,10 @@ pre-push:
     rustdoc-check:
       tags: docs
       run: just rustdoc-check
+      only:
+        - run: git rev-list --count HEAD ^@{upstream} 2>/dev/null || git rev-list --count HEAD
+    py-checks:
+      tags: lint
+      run: just py-fmt-check && just py-typecheck
       only:
         - run: git rev-list --count HEAD ^@{upstream} 2>/dev/null || git rev-list --count HEAD

@@ -20,6 +20,15 @@ proptest-regressions/
 /perf.data.old
 /flamegraph.svg
 
+# Python tooling (uv-managed, ruff/mypy caches)
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.venv/
+/uv.lock
+/flamegraph.svg
+
 # Real scan data is held out of the repo for copyright reasons; only the
 # tiny synthetic fixtures under samples/ are tracked.
 *.pdf
