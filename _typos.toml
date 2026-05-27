@@ -1,0 +1,35 @@
+[default]
+locale = "en-us"
+
+[default.extend-identifiers]
+PNG = "PNG"
+PBM = "PBM"
+region_labelling = "region_labelling"
+Labelling = "Labelling"
+labelling = "labelling"
+
+[default.extend-words]
+cli = "cli"
+Cli = "Cli"
+jis = "jis"
+sjis = "sjis"
+labelling = "labelling"
+Labelling = "Labelling"
+binarise = "binarise"
+
+[files]
+extend-exclude = [
+    "target/**",
+    "artifacts/**",
+    "**/*.lock",
+    "**/*.snap",
+    "**/*.snap.new",
+    "node_modules/**",
+    "samples/**",
+]
+
+[type.toml]
+extend-glob = ["*.toml"]
+
+[type.rust]
+extend-glob = ["*.rs"]

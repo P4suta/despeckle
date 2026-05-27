@@ -1,0 +1,30 @@
+[package]
+name = "despeckle-core"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Core image-processing library for despeckle: removing dust from bitonal Japanese-novel scans."
+
+[package.metadata.cargo-rdme]
+readme-path = "README.md"
+
+[dependencies]
+image.workspace = true
+kiddo.workspace = true
+memmap2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+mimalloc.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true
+
+[[bench]]
+name = "process_page"
+harness = false

@@ -1,0 +1,8 @@
+target/
+artifacts/
+node_modules/
+.git/
+.idea/
+.vscode/
+report/
+samples/
