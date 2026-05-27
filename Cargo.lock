@@ -391,6 +391,7 @@ dependencies = [
  "mimalloc",
  "proptest",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]

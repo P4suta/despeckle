@@ -16,6 +16,7 @@ image.workspace = true
 kiddo.workspace = true
 memmap2.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true

@@ -37,7 +37,9 @@ const MIN_COMPONENTS_FOR_REMOVAL: usize = 8;
 #[must_use]
 pub fn process_page(input: GrayImage) -> ProcessResult {
     let labelling = label(&input);
-    if labelling.components.len() < MIN_COMPONENTS_FOR_REMOVAL {
+    let component_count = labelling.components.len();
+    tracing::debug!(components = component_count, "process_page CCs");
+    if component_count < MIN_COMPONENTS_FOR_REMOVAL {
         return ProcessResult {
             image: input,
             components_removed: 0,
