@@ -16,7 +16,7 @@ publish = false
 anyhow = "1"
 assert_cmd = "2"
 clap = { version = "4", features = ["derive"] }
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 globset = "0.4"
 image = { version = "0.25", default-features = false, features = ["pnm", "png", "tiff"] }
 imageproc = { version = "0.25", default-features = false }
