@@ -6,6 +6,7 @@ version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+publish.workspace = true
 description = "CLI driver for despeckle: removes dust from bitonal Japanese-novel scan images."
 
 [[bin]]
@@ -20,7 +21,6 @@ globset.workspace = true
 image.workspace = true
 indicatif.workspace = true
 mimalloc.workspace = true
-rayon.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 walkdir.workspace = true

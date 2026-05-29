@@ -373,7 +373,6 @@ dependencies = [
  "indicatif",
  "mimalloc",
  "predicates",
- "rayon",
  "tempfile",
  "tracing",
  "tracing-subscriber",
