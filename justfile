@@ -1,21 +1,29 @@
 # despeckle — task entry points. Routes through Docker unless INSIDE_CONTAINER=1.
+#
+# Every recipe runs inside the dev container (Temurin JDK 25 + Leptonica + the
+# language-agnostic quality tools), so the host needs nothing but Docker. The
+# dev image sets INSIDE_CONTAINER=1, which makes the same recipes call the tools
+# directly instead of re-entering Docker.
 
 inside := env_var_or_default("INSIDE_CONTAINER", "0")
 
 dev_running := `docker compose ps --status running --services 2>/dev/null | grep -c '^dev$' 2>/dev/null || true`
 docker_run := if dev_running == "0" { "docker compose run --rm dev" } else { "docker compose exec dev" }
 
-cargo := if inside == "1" { "cargo" } else { docker_run + " cargo" }
-rustup := if inside == "1" { "rustup" } else { docker_run + " rustup" }
+gradlew := if inside == "1" { "./gradlew" } else { docker_run + " ./gradlew" }
 typos := if inside == "1" { "typos" } else { docker_run + " typos" }
-actionlint := if inside == "1" { "actionlint" } else { docker_run + " actionlint" }
-lefthook := if inside == "1" { "lefthook" } else { docker_run + " lefthook" }
 taplo := if inside == "1" { "taplo" } else { docker_run + " taplo" }
 biome := if inside == "1" { "biome" } else { docker_run + " biome" }
 yamlfmt := if inside == "1" { "yamlfmt" } else { docker_run + " yamlfmt" }
+actionlint := if inside == "1" { "actionlint" } else { docker_run + " actionlint" }
+lefthook := if inside == "1" { "lefthook" } else { docker_run + " lefthook" }
+pdfimages := if inside == "1" { "pdfimages" } else { docker_run + " pdfimages" }
 sh := if inside == "1" { "bash -lc" } else { docker_run + " bash -lc" }
 
-dev_log := env_var_or_default("DESPECKLE_LOG", "info")
+# Gradle: no daemon (containers are ephemeral), plain console, and never
+# auto-download a JDK — the image's Temurin 25 is the toolchain. Identical to
+# the flags CI runs, so `just build` and CI cannot drift.
+gradle_flags := "--no-daemon --console=plain -Dorg.gradle.java.installations.auto-download=false"
 
 default:
     @just --list
@@ -33,32 +41,22 @@ bootstrap:
     {{lefthook}} install
     @just doctor
     @echo
-    @echo "🎉 bootstrap done. Try: just build / just test / just lint"
+    @echo "🎉 bootstrap done. Try: just build / just test / just run-sample"
 
 doctor:
     @echo "==> despeckle doctor"
     @{{docker_run}} bash -c 'set -e; \
-        check() { printf "  %-18s " "$1"; out=$($2 2>&1 | head -1) && printf "ok    %s\n" "$out" || { printf "MISSING\n"; exit 1; }; }; \
-        check rustc          "rustc --version"; \
-        check cargo          "cargo --version"; \
-        check cargo-nextest  "cargo nextest --version"; \
-        check cargo-deny     "cargo deny --version"; \
-        check cargo-audit    "cargo audit --version"; \
-        check cargo-llvm-cov "cargo llvm-cov --version"; \
-        check cargo-machete  "cargo machete --version"; \
-        check cargo-sort     "cargo sort --version"; \
-        check cargo-rdme     "cargo rdme --version"; \
-        check cargo-modules  "cargo modules --version"; \
-        check cargo-depgraph "cargo depgraph --version"; \
-        check typos          "typos --version"; \
-        check taplo          "taplo --version"; \
-        check biome          "biome --version"; \
-        check yamlfmt        "yamlfmt --version"; \
-        check actionlint     "actionlint -version"; \
-        check lefthook       "lefthook version"; \
-        check just           "just --version"; \
-        check mold           "mold --version"; \
-        check clang          "clang --version"; \
+        check() { printf "  %-12s " "$1"; out=$($2 2>&1 | head -1) && printf "ok    %s\n" "$out" || { printf "MISSING\n"; exit 1; }; }; \
+        check java       "java -version"; \
+        check typos      "typos --version"; \
+        check taplo      "taplo --version"; \
+        check biome      "biome --version"; \
+        check yamlfmt    "yamlfmt --version"; \
+        check actionlint "actionlint -version"; \
+        check lefthook   "lefthook version"; \
+        check just       "just --version"; \
+        check pdfimages  "pdfimages -v"; \
+        check img2pdf    "img2pdf --version"; \
     '
     @echo "==> doctor: ok"
 
@@ -83,115 +81,156 @@ dev-up:
 dev-down:
     docker compose stop dev
 
-# ----- Rust workflow -----
+# ----- build / test -----
 
+# Full quality gate: compile (Error Prone, -Werror), Spotless check, SpotBugs,
+# and the JUnit suite. Identical to what CI runs.
 build:
-    @echo "==> cargo build --workspace --all-targets"
-    {{cargo}} build --workspace --all-targets
+    @echo "==> ./gradlew build"
+    {{gradlew}} build {{gradle_flags}}
 
-build-release:
-    {{cargo}} build --release --workspace
+# Compile + assemble the runnable jar, skipping checks (fast inner loop).
+assemble:
+    {{gradlew}} assemble {{gradle_flags}}
 
-b:
-    {{cargo}} build --workspace
-
+# JUnit suite only.
 test:
-    @echo "==> cargo nextest run --workspace"
-    {{cargo}} nextest run --workspace
-    @echo "==> cargo test --doc --workspace"
-    {{cargo}} test --doc --workspace
+    @echo "==> ./gradlew test"
+    {{gradlew}} test {{gradle_flags}}
 
-t:
-    {{cargo}} nextest run --workspace --no-fail-fast
+clean:
+    {{gradlew}} clean {{gradle_flags}}
 
-doctest:
-    {{cargo}} test --doc --workspace
+# ----- run -----
 
-coverage:
-    {{cargo}} llvm-cov --workspace --branch --html --output-dir artifacts/coverage
+# Process a directory of bitonal images. Extra args pass straight to the CLI:
+#   just run scans/book out/book --report report/book --force
+run input output *args:
+    {{gradlew}} run {{gradle_flags}} --args="{{input}} {{output}} {{args}}"
 
-# ----- profiling (host-only; perf_event_open needs kernel.perf_event_paranoid <= 1) -----
+# Smoke check: process the bundled samples/ into artifacts/ with an HTML report.
+run-sample:
+    {{gradlew}} run {{gradle_flags}} \
+        --args="samples artifacts/sample-out --report artifacts/sample-report --force"
+
+# ----- format / lint (mirrors CI + the lefthook gates) -----
+
+# Auto-format everything in place.
+fmt:
+    {{gradlew}} spotlessApply {{gradle_flags}}
+    {{taplo}} fmt
+    {{biome}} format --write .
+    {{yamlfmt}} .
+
+# Verify formatting without writing (what CI checks).
+fmt-check:
+    {{gradlew}} spotlessCheck {{gradle_flags}}
+    {{taplo}} fmt --check
+    {{biome}} format .
+    {{yamlfmt}} --lint .
+
+typos:
+    {{typos}}
+
+typos-fix:
+    {{typos}} --write-changes
+
+actionlint:
+    {{actionlint}} .github/workflows/*.yml
+
+# Aggregated lint gate (mirrors CI's lint-peripheral plus Spotless).
+lint: fmt-check typos actionlint
+
+# Local CI replica: lint + the full build (which also runs the tests).
+ci: lint build
+
+# ----- git hooks -----
+
+hooks:
+    {{lefthook}} install
+
+# ----- lefthook delegated recipes (invoked by git hooks; do not run directly) -----
 #
-# All of these recipes run on the host (not inside the dev container) because
-# perf_event_open(2) is blocked by Docker's seccomp profile. To enable on
-# the host, once per boot:
+# Each recipe announces the tool and its job, and on failure prints a
+# "✗ <tool> failed" line naming the likely cause — so a hook failure tells you
+# which tool broke and why, instead of a bare "recipe failed with exit code N".
+# The tool's own output still streams above that line.
+
+# Spotless has no reliable single-file mode, so it formats the whole Java tree;
+# lefthook re-stages the result (stage_fixed: true).
+_hook-spotless-apply:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    echo "▶ spotless / google-java-format — reformatting Java sources"
+    {{gradlew}} spotlessApply {{gradle_flags}} && exit 0
+    echo "✗ spotless could not run." >&2
+    echo "  Likely: the dev image has no JDK, or .gradle-home is not writable by" >&2
+    echo "  this user (a root-owned gradle volume corrupts the wrapper). Run 'just doctor'." >&2
+    exit 1
+
+_hook-typos-fix +files:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    echo "▶ typos — spell-checking staged files"
+    # --force-exclude: honor _typos.toml [files].extend-exclude even though the
+    # paths are passed explicitly. Without it typos scans binaries it was told to
+    # skip (e.g. gradle-wrapper.jar) and "fixes" random bytes, corrupting them.
+    {{typos}} --force-exclude --write-changes {{files}} && exit 0
+    echo "✗ typos found misspellings it could not auto-fix (listed above)." >&2
+    echo "  Fix the word, or whitelist it in _typos.toml [default.extend-words]." >&2
+    exit 1
+
+_hook-taplo-fmt +files:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    echo "▶ taplo — formatting TOML"
+    {{taplo}} fmt {{files}} && exit 0
+    echo "✗ taplo failed to format TOML (see above)." >&2
+    exit 1
+
+_hook-biome-format +files:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    echo "▶ biome — formatting JSON"
+    {{biome}} format --write {{files}} && exit 0
+    echo "✗ biome failed to format JSON (see above)." >&2
+    exit 1
+
+_hook-yamlfmt +files:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    echo "▶ yamlfmt — formatting YAML"
+    {{yamlfmt}} {{files}} && exit 0
+    echo "✗ yamlfmt failed to format YAML (see above)." >&2
+    exit 1
+
+_hook-actionlint +files:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    echo "▶ actionlint — linting GitHub Actions workflows"
+    {{actionlint}} {{files}} && exit 0
+    echo "✗ actionlint found workflow problems (listed above); fix them before committing." >&2
+    exit 1
+
+# ----- scan pipeline (pdfimages in, img2pdf out; both bundled in the dev image) -----
 #
-#   sudo sysctl -w kernel.perf_event_paranoid=1
-#
-# or persistently:
-#
-#   echo 'kernel.perf_event_paranoid=1' | sudo tee /etc/sysctl.d/99-perf.conf
-
-sample_input := env_var_or_default("DESPECKLE_SAMPLE_IN", "private/scans/russell2")
-sample_output := env_var_or_default("DESPECKLE_SAMPLE_OUT", "artifacts/profile-out")
-
-# Criterion bench: per-page micro and sub-step. HTML report under target/criterion/.
-bench:
-    cargo bench -p despeckle-core --bench process_page
-
-# cargo-flamegraph SVG (symbolicated via DWARF). Output: artifacts/flame.svg.
-flame:
-    @mkdir -p artifacts
-    cargo flamegraph --profile release-perf -p despeckle-cli \
-        --output artifacts/flame.svg -- \
-        {{sample_input}} {{sample_output}} --force
-    @echo "flame graph written to artifacts/flame.svg — open in a browser"
-
-# samply record + open in Firefox Profiler UI (browser must be reachable).
-profile:
-    cargo build --profile release-perf -p despeckle-cli
-    samply record -- ./target/release-perf/despeckle \
-        {{sample_input}} {{sample_output}} --force
-
-# samply record to file only (no browser), then print a text top-N summary.
-profile-summary:
-    @mkdir -p artifacts
-    cargo build --profile release-perf -p despeckle-cli
-    samply record --save-only -o artifacts/profile.json -- \
-        ./target/release-perf/despeckle {{sample_input}} {{sample_output}} --force
-    {{sh}} "python3 tools/samply_top.py artifacts/profile.json \
-        ./target/release-perf/despeckle | tee artifacts/profile-summary.md"
-
-# ----- Python tooling (host-side analysis + PDF packagers) -----
-#
-# All Python code lives under tools/ and is driven by uv + ruff + mypy
-# baked into the dev image; no host pip required. `pyproject.toml` at
-# the workspace root is the single source of truth for Python config.
-
-uv := if inside == "1" { "uv" } else { docker_run + " uv" }
-ruff := if inside == "1" { "ruff" } else { docker_run + " ruff" }
-mypy := if inside == "1" { "mypy" } else { docker_run + " uv tool run mypy" }
-img2pdf := if inside == "1" { "img2pdf" } else { docker_run + " img2pdf" }
-
-# Lint Python tools/ via ruff (no auto-fix).
-py-lint:
-    {{ruff}} check tools
-
-# Auto-fix + format Python tools/.
-py-fmt:
-    {{ruff}} check --fix tools
-    {{ruff}} format tools
-
-py-fmt-check:
-    {{ruff}} check tools
-    {{ruff}} format --check tools
-
-py-typecheck:
-    {{mypy}} tools
-
-## PDF packaging ---------------------------------------------------------
-##
-## PBM files do not carry a DPI tag, so img2pdf falls back to 96 dpi and
-## the resulting PDF balloons to ~30 cm wide with the raster stretched
-## across it — the page looks jaggy at any zoom level. We pass the input
-## DPI explicitly via `--imgsize <DPI>dpix<DPI>dpi`, which makes the PDF
-## page size match the physical page of the source scan. Drive it via
-## `DESPECKLE_DPI=600` (default) or override per-book.
+# PBM files carry no DPI tag, so img2pdf would default to 96 dpi and stretch the
+# page across ~30 cm. Pass the source DPI explicitly via --imgsize so the PDF
+# page matches the physical scan. Override with DESPECKLE_DPI=<n>.
 
 dpi := env_var_or_default("DESPECKLE_DPI", "600")
 
-# Roll a directory of PBM/PNG pages into a single PDF for human review.
-# Example: `just to-pdf artifacts/russell-cleaned artifacts/russell-cleaned.pdf`
+# Extract every embedded 1-bit image from a scan PDF as TIFF, preserving the
+# pixel grid exactly (no re-rasterise, no re-threshold). pdfimages decodes the
+# source codec; pdftoppm -mono was lossy on JBIG2 scans.
+# Example: `just extract path/to/book.pdf private/scans/book`
+extract pdf out_dir:
+    @mkdir -p {{out_dir}}
+    {{pdfimages}} -tiff {{pdf}} {{out_dir}}/page
+    @echo "extracted $(ls {{out_dir}} | wc -l) TIFF pages to {{out_dir}}"
+
+# Roll a directory of cleaned pages into one PDF for human review.
+# Example: `just to-pdf out/book out/book.pdf`
 to-pdf in out:
     {{sh}} 'mkdir -p "$(dirname "{{out}}")" && img2pdf --imgsize "{{dpi}}dpix{{dpi}}dpi" {{in}}/* --output {{out}}'
 
@@ -206,9 +245,8 @@ to-all-pdfs:
             img2pdf --imgsize \"{{dpi}}dpix{{dpi}}dpi\" \"\$dir\"/* --output \"\$out\"; \
         done"
 
-# Pack every artifacts/*-report/overlay/ directory into a single PDF so
-# you can scrub through and see which pixels despeckle actually removed
-# (highlighted in red over the original page). One file per book.
+# Pack every artifacts/*-report/overlay/ directory into one PDF so you can scrub
+# through and see which pixels despeckle removed (painted red over the original).
 to-overlay-pdfs:
     {{docker_run}} bash -c "\
         set -euo pipefail; \
@@ -219,144 +257,3 @@ to-overlay-pdfs:
             echo \"==> \$dir/overlay -> \$out @ {{dpi}} dpi\"; \
             img2pdf --imgsize \"{{dpi}}dpix{{dpi}}dpi\" \"\$dir/overlay\"/*.png --output \"\$out\"; \
         done"
-
-# Extract every embedded 1-bit image from a scan PDF as TIFF, preserving
-# the original pixel grid exactly (no re-rasterisation, no re-threshold).
-# `pdftoppm -mono` was lossy on JBIG2-encoded scans (~1 % spurious pixel
-# flips that PDF.js renders as jaggies). `pdfimages -tiff` decodes the
-# source codec and writes the bit pattern as 1-bit BlackIsZero TIFF,
-# which `img2pdf` re-encodes as CCITT-G4 inside the resulting PDF — so
-# both the on-disk size and the visual quality stay close to the
-# original ScanSnap output.
-#
-# Example: `just extract path/to/book.pdf private/scans/book`
-extract pdf out_dir:
-    @mkdir -p {{out_dir}}
-    pdfimages -tiff {{pdf}} {{out_dir}}/page
-    @echo "extracted $(ls {{out_dir}} | wc -l) TIFF pages to {{out_dir}}"
-
-# ----- run -----
-
-# Process a directory of bitonal images.
-run input output *args:
-    DESPECKLE_LOG={{dev_log}} {{cargo}} run -p despeckle-cli -- {{input}} {{output}} {{args}}
-
-run-release input output *args:
-    DESPECKLE_LOG={{dev_log}} {{cargo}} run --release -p despeckle-cli -- {{input}} {{output}} {{args}}
-
-# Process the bundled `samples/` directory into `artifacts/sample-out` and
-# write an HTML report. Used as a smoke check during development.
-run-sample:
-    @mkdir -p artifacts
-    DESPECKLE_LOG={{dev_log}} {{cargo}} run -p despeckle-cli -- \
-        samples artifacts/sample-out --report artifacts/sample-report --force
-
-# ----- lint / quality gates -----
-
-fmt:
-    {{cargo}} fmt --all
-    {{cargo}} sort --workspace
-    {{taplo}} fmt
-    {{biome}} format --write .
-    {{yamlfmt}} .
-
-fmt-check:
-    {{cargo}} fmt --all -- --check
-    {{cargo}} sort --workspace --check
-    {{taplo}} fmt --check
-    {{biome}} format .
-    {{yamlfmt}} --lint .
-
-clippy:
-    {{cargo}} clippy --workspace --all-targets -- -D warnings
-
-deny:
-    {{cargo}} deny check advisories bans licenses sources
-
-audit:
-    {{cargo}} audit --deny warnings
-
-typos:
-    {{typos}}
-
-typos-fix:
-    {{typos}} --write-changes
-
-actionlint:
-    {{actionlint}} .github/workflows/*.yml
-
-machete:
-    {{cargo}} machete
-
-# ----- auto-generated docs -----
-
-docs-dep-graph:
-    {{sh}} "{{cargo}} depgraph --workspace-only | dot -Tsvg > docs/dep-graph.svg"
-
-docs-modules:
-    {{sh}} "{{cargo}} modules structure --package despeckle-core > docs/modules/despeckle-core.txt"
-    {{sh}} "{{cargo}} modules structure --package despeckle-cli > docs/modules/despeckle-cli.txt"
-
-docs-readme:
-    {{sh}} "cd crates/despeckle-core && {{cargo}} rdme --force"
-
-docs: docs-dep-graph docs-modules docs-readme
-
-doc:
-    {{cargo}} doc --workspace --no-deps --open
-
-# RUSTDOCFLAGS=-D warnings is also enforced in .github/workflows/docs.yml.
-# This recipe matches that so pre-push catches the same drift CI would.
-rustdoc-check:
-    @echo "==> cargo doc --workspace --no-deps (RUSTDOCFLAGS=-D warnings)"
-    @if [ "{{inside}}" = "1" ]; then \
-        RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps; \
-    elif [ "{{dev_running}}" = "0" ]; then \
-        docker compose run --rm -e RUSTDOCFLAGS="-D warnings" dev cargo doc --workspace --no-deps; \
-    else \
-        docker compose exec -e RUSTDOCFLAGS="-D warnings" dev cargo doc --workspace --no-deps; \
-    fi
-
-# Aggregated lint pipeline (mirrors the CI gates that block merges).
-lint: fmt-check clippy deny typos actionlint machete
-
-# Local CI replica.
-ci: lint test rustdoc-check
-
-# ----- git hooks -----
-
-hooks:
-    {{lefthook}} install
-
-# ----- lefthook delegated recipes (do not run directly) -----
-
-_hook-fmt +files:
-    {{cargo}} fmt -- {{files}}
-
-_hook-typos-fix +files:
-    {{typos}} --write-changes {{files}}
-
-_hook-taplo-fmt +files:
-    {{taplo}} fmt {{files}}
-
-_hook-cargo-sort:
-    {{cargo}} sort --workspace
-
-_hook-biome-format +files:
-    {{biome}} format --write {{files}}
-
-_hook-yamlfmt +files:
-    {{yamlfmt}} {{files}}
-
-_hook-actionlint +files:
-    {{actionlint}} {{files}}
-
-_hook-docs-drift:
-    just docs
-    {{sh}} "git diff --quiet docs/ crates/despeckle-core/README.md || (echo 'docs drift detected — run \\`just docs\\` and commit' >&2; exit 1)"
-
-_hook-ruff-format +files:
-    {{ruff}} format {{files}}
-
-_hook-ruff-check +files:
-    {{ruff}} check --fix {{files}}

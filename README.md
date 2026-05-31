@@ -2,149 +2,109 @@
 
 Automatic dust / speckle removal for bitonal Japanese-novel scans.
 
-`despeckle` is the first piece of a Rust pipeline that post-processes
-self-scanned PDF books so every page looks visually aligned. This tool
-focuses on the hardest single operation: removing the random pepper-noise
-produced by the scanner while protecting fragile typography — **ruby
-(振り仮名), 句読点 (「。」「、」), and dakuten/handakuten (「゛」「゜」)** —
-that a naive size-threshold filter would also erase.
+`despeckle` post-processes self-scanned PDF books so every page looks
+clean: it removes the random pepper-noise a scanner sprinkles across the
+page while protecting fragile typography — **ruby (振り仮名), 句読点
+(「。」「、」), and dakuten/handakuten (「゛」「゜」)** — that a naive
+size filter would also erase.
+
+It is a thin, careful wrapper around [Leptonica](http://www.leptonica.org/)'s
+`pixSelectBySize`, called through the JDK Foreign Function & Memory API.
+The image science is Leptonica's; despeckle supplies the conservative,
+DPI-aware policy, the directory/parallel driver, and the inspection report.
 
 ## Boundaries
 
 - **Image in / image out, never PDF.** Pair with `pdftoppm -mono` on the
-  way in and an image-→-PDF re-packer on the way out (separate tools).
-- **Novels only, vertical typesetting.** The column-mask heuristic
-  assumes vertical Japanese text. Tables, figures, mixed layouts are out
-  of scope.
-- **No tuning UI.** Per-page thresholds are derived automatically; the
-  goal is one-shot "feels right" output, not a knob to turn.
-- **`.pbm` round-trip is byte-identical.** Input `.pbm` (P4) → output
-  `.pbm` (P4) preserves the 1-bit packing so file size never bloats.
+  way in and `img2pdf` on the way out (both bundled in the dev image).
+- **Dust removal only.** Deskew, margin-cropping and contrast are out of
+  scope.
+- **Conservative by design.** A connected component survives if its
+  bounding box is larger than the speck size in *either* width or height,
+  so punctuation, ruby and even a thin vertical stroke are kept; only
+  things tiny on *both* axes (scanner dust) are dropped.
 
 ## How it works (one page)
 
 ```
-load → label (4-conn CCL) → build column mask (vertical projection + Otsu)
-     → auto thresholds (speckle peak / percentile fallback)
-     → classify (in-column vs gutter, area + isolation)
-     → render (paint removed components white)
+read (Leptonica) → keep components larger than k, 8-connected
+                 → optionally fill pin-holes (invert → same filter → invert)
+                 → write (Leptonica)
 ```
 
-Every step is a pure function in `despeckle-core`; the binary
-(`despeckle-cli`) handles directory walking, rayon parallelism, the
-indicatif progress bar, and the optional HTML report.
+`k` (the speck size) defaults to `dpi / 100` — about 3 px at 300 dpi.
+The PBM round-trip is pixel-identical: a page with no specks comes back
+unchanged.
 
 ## Quick start
 
+Everything runs inside the dev container, so the host only needs Docker:
+
 ```sh
-just bootstrap              # build dev container, install git hooks
-just build                  # cargo build inside the container
-just test                   # cargo nextest + doctests
-just run input output       # despeckle input → output
-just run-sample             # process samples/ → artifacts/sample-out + HTML report
+just bootstrap     # build/pull the dev image, install git hooks
+just build         # ./gradlew build (compile, format, static analysis, tests)
+just test          # JUnit suite
+just run-sample    # process samples/ → artifacts/sample-out + HTML report
 ```
 
-Or, given a real PDF, expand it with poppler-utils first:
+Given a real scan PDF:
 
 ```sh
-mkdir -p scans/mybook
-pdftoppm -mono -r 300 mybook.pdf scans/mybook/page
-despeckle scans/mybook out/mybook --force --report report/mybook
-open report/mybook/index.html
+just extract mybook.pdf scans/mybook          # pdftoppm -mono -r 300
+just run scans/mybook out/mybook --report report/mybook --force
+just to-pdf out/mybook out/mybook.pdf         # img2pdf, DPI-tagged
 ```
 
 ## CLI
 
 ```
 despeckle <INPUT_DIR> <OUTPUT_DIR>
-  [--report <DIR>]        # write before/overlay/after ONGs and index.html
-  [--jobs <N>]            # rayon thread count (default: logical CPUs)
-  [--format pbm|png|same] # output extension (default: same as input)
-  [--glob <PATTERN>]      # default: "*.{pbm,png,tiff,tif}"
-  [--force]               # overwrite a non-empty output directory
-  [-v / -q]               # log level
+  [--report <DIR>]         # before/overlay/after ONGs + index.html
+  [--jobs <N>]             # worker threads (default: CPUs)
+  [--format pbm|png|same]  # output format (default: same as input)
+  [--glob <PATTERN>]       # default: "*.{pbm,png,tiff,tif}"
+  [--force]                # overwrite a non-empty output directory
+  [--dpi <N>]              # scan resolution, sizes the filter (default: 300)
+  [--speck-size <PX>]      # override the speck size directly
+  [--[no-]fill-holes]      # fill pin-holes inside strokes (default: on)
 ```
 
-Set `DESPECKLE_LOG=debug` for verbose tracing output.
+The report's overlay paints every removed pixel red over the original
+page, so you can confirm at a glance that only dust was taken.
 
-## Performance
+## Architecture
 
-Per-page micro-benchmark on a 1158 × 1732 (~2 Mpx) Russell-『哲学入門』
-scan, release profile (`lto = "fat"`, `codegen-units = 1`, mimalloc
-allocator), single-threaded:
+A single Gradle module under `io.github.p4suta.despeckle`:
 
-| step                | time   | share |
-| ------------------- | -----: | ----: |
-| `label` (CCL)       | 4.0 ms |   58% |
-| `paint` (remove)    | ~1 ms  |   14% |
-| `build_column_mask` | 0.3 ms |    4% |
-| `classify`          | 0.2 ms |    3% |
-| **`process_page`**  | **6.9 ms** | 100% |
+| package   | role                                                          |
+| --------- | ------------------------------------------------------------- |
+| `core`    | `Leptonica` (the one FFM binding island), `Pix` (RAII handle), `Despeckler` (the pipeline) |
+| `runner`  | directory walk, fixed thread pool, over-removal guardrail     |
+| `report`  | before/overlay/after ONGs + `index.html`                      |
+| `cli`     | picocli front end                                             |
 
-End-to-end on the 87-page Russell PDF (lock-free `AtomicUsize` work
-queue across logical CPUs, mmap-based PBM reader, branch-free paint):
-**~0.24 s wall** (`cargo run --release`), file size 21 MB → 21 MB
-byte-for-byte preserved on the PBM round-trip.
+`core` performs no directory or thread work, so a future GUI can reuse it
+unchanged.
 
-### Optimization journey
+## Requirements
 
-Starting from a naive `imageproc::region_labelling` + `HashSet` paint
-implementation at 44.6 ms / page and 1.24 s wall:
+- **Leptonica** (`liblept.so`) at run time — the dev image installs
+  `libleptonica-dev`. Override the resolved path with
+  `-Ddespeckle.leptonica.path=/path/to/liblept.so` if needed.
+- **JDK 25** (FFM is final since JDK 22; the build pins the 25 toolchain).
+- Run with `--enable-native-access=ALL-UNNAMED` — the `application`,
+  `test` and `run` tasks already pass it.
 
-| step                                          | per-page  | wall   | delta (page) |
-| --------------------------------------------- | --------: | -----: | -----------: |
-| baseline                                      |  44.6 ms  | 1.24 s |            — |
-| `HashMap` → dense `Vec<Accumulator>` index    |  26.4 ms  |        |        -41 % |
-| paint via bitset LUT on raw label slice       |  23.5 ms  |        |        -11 % |
-| mimalloc global allocator                     |  13.7 ms  | 0.83 s |        -42 % |
-| custom 4-conn union-find CCL (drop imageproc) |   9.7 ms  |        |        -29 % |
-| `project_x` branch-free `+=` on raw slices    |   7.4 ms  |        |        -24 % |
-| pass-1 carry left-label in a local            |   6.7 ms  | 0.52 s |        -10 % |
-| mmap PBM reader + LUT bit-unpack              |   6.9 ms  | 0.28 s |    — / -46 % |
-| LUT bit-pack writer                           |   6.9 ms  | 0.27 s |    — / -4 %  |
-| `kiddo` KD-tree replaces O(n²) neighbor scan |   6.2 ms  |        |         -9 % |
-| `std::thread::scope` + `AtomicUsize` queue    |   6.9 ms  | 0.24 s |    — / -11 % |
+## Quality gates
 
-Every step was verified by `cargo test` (9 unit + 2 proptest cases) and
-a samply flame graph (`just flame` → `artifacts/flame.svg`) before being
-kept. See `crates/despeckle-core/benches/process_page.rs` for the
-benchmark itself.
+`./gradlew build` runs the full gate, mirrored by CI:
 
-### Profiling
-
-The profiling toolchain is automated through `justfile` recipes (host
-only — `perf_event_open(2)` is Docker-blocked):
-
-```sh
-# one-time, persists across boots
-echo 'kernel.perf_event_paranoid=1' | sudo tee /etc/sysctl.d/99-perf.conf
-sudo sysctl --system
-
-just bench             # criterion HTML reports → target/criterion/
-just flame             # cargo flamegraph SVG → artifacts/flame.svg
-just profile           # samply record → opens in Firefox Profiler
-just profile-summary   # samply + tools/samply_top.py top-N → artifacts/profile-summary.md
-```
-
-`tools/samply_top.py` parses the saved Gecko-profile JSON, resolves
-every frame address through `addr2line`, and emits a Markdown table of
-top self- and inclusive-time symbols. Use the `release-perf` profile
-(line-tables-only) for any address-level work — the default `release`
-profile strips symbols.
-
-## Algorithm caveats
-
-- The body / margin distinction relies on a simple x-projection cutoff.
-  Page headers (柱), folios (ノンブル), chapter titles outside the
-  column band are treated as gutter and **may** be removed if small
-  enough. Real scans of novels usually keep these features well above
-  the gutter cutoff, but it is a known v1 limitation.
-- The column mask is built per page; pages with figures or tables are
-  not the target.
-- A page with fewer than 8 connected components is left untouched
-  (e.g. blank pages, the cover, a single solid mark). The dust
-  heuristic needs a histogram of components to work; on a degenerate
-  page it would otherwise classify the only component as dust.
+- **Spotless** + google-java-format (AOSP, 100 columns)
+- **Error Prone** on every compile, `-Werror`
+- **SpotBugs** at max effort
+- **JUnit** — FFM smoke, pixel-identical round-trip, the polarity /
+  connectivity pin (a tall thin stroke is kept, a 2×2 speck is dropped),
+  hole-filling, and a directory end-to-end run.
 
 ## License
 

@@ -1,15 +1,12 @@
 # Builds the despeckle dev container image and pushes it to ghcr.io.
 #
 # Why a pre-built image (vs `docker compose build` on every clone):
-#   - Actions runners ship with GITHUB_TOKEN pre-configured, so cargo-binstall
-#     hits the authenticated api.github.com rate limit (5000/h) instead of the
-#     anonymous 60/h cliff.
-#   - `cache-from: type=gha` keeps cargo registry / binstall layers warm.
 #   - End users `docker compose pull` (~20 s) instead of building locally.
+#   - `cache-from: type=gha` keeps the apt + tool-download layers warm.
 #
 # Trigger policy:
-#   - push to main with Dockerfile / workflow file changes
-#   - weekly schedule to refresh prebuilt tool versions
+#   - push to main that touches the Dockerfile or this workflow
+#   - weekly schedule to refresh the "latest" tool downloads
 #   - manual workflow_dispatch for ad-hoc rebuilds
 
 name: dev-image
@@ -63,5 +60,3 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          secrets: |-
-            github-token=${{ secrets.GITHUB_TOKEN }}

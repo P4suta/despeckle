@@ -2,8 +2,8 @@
 * @P4suta
 
 # Architecture-affecting files require extra scrutiny.
-/Cargo.toml @P4suta
-/Cargo.lock @P4suta
-/rust-toolchain.toml @P4suta
-/.cargo/ @P4suta
+/build.gradle.kts @P4suta
+/settings.gradle.kts @P4suta
+/gradle/libs.versions.toml @P4suta
+/Dockerfile @P4suta
 /.github/ @P4suta

@@ -1,35 +1,23 @@
+# typos spell-checker config.
+
+[files]
+# Skip binaries and generated/vendored files: typos would scan the Gradle
+# wrapper jar byte-for-byte and flag random byte sequences as misspellings.
+extend-exclude = [
+  "*.pbm",
+  "*.jar",
+  "gradlew",
+  "gradlew.bat",
+  "gradle/wrapper/",
+  "build/",
+  ".gradle/",
+  ".gradle-home/",
+]
+
 [default]
 locale = "en-us"
 
-[default.extend-identifiers]
-PNG = "PNG"
-PBM = "PBM"
-region_labelling = "region_labelling"
-Labelling = "Labelling"
-labelling = "labelling"
-
 [default.extend-words]
-cli = "cli"
-Cli = "Cli"
-jis = "jis"
-sjis = "sjis"
-labelling = "labelling"
-Labelling = "Labelling"
-binarise = "binarise"
-
-[files]
-extend-exclude = [
-    "target/**",
-    "artifacts/**",
-    "**/*.lock",
-    "**/*.snap",
-    "**/*.snap.new",
-    "node_modules/**",
-    "samples/**",
-]
-
-[type.toml]
-extend-glob = ["*.toml"]
-
-[type.rust]
-extend-glob = ["*.rs"]
+# Short tokens / romaji that look like typos but are intentional.
+ruby = "ruby"
+mmap = "mmap"
