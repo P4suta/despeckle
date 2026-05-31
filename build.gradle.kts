@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.spotless)
     alias(libs.plugins.errorprone)
     alias(libs.plugins.spotbugs)
+    alias(libs.plugins.rewrite)
 }
 
 group = "io.github.p4suta"
@@ -32,7 +33,14 @@ dependencies {
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
+    testImplementation(libs.archunit.junit5)
     testRuntimeOnly(libs.junit.platform.launcher)
+
+    // OpenRewrite recipe modules. Only the rewriteRun/rewriteDryRun tasks pull
+    // these in; they are not part of the `build` graph, so a recipe never blocks
+    // a commit.
+    rewrite(platform(libs.rewrite.recipe.bom))
+    rewrite(libs.rewrite.static.analysis)
 }
 
 // The one place native access is granted; reused by run, test and any JavaExec.
@@ -89,4 +97,11 @@ spotbugs {
 
 tasks.withType<com.github.spotbugs.snom.SpotBugsTask>().configureEach {
     reports.create("html") { required = true }
+}
+
+// OpenRewrite: a curated static-analysis pass run on demand with
+// `./gradlew rewriteRun` (preview with `rewriteDryRun`). Deliberately not wired
+// into `build`, so it never blocks a commit.
+rewrite {
+    activeRecipe("org.openrewrite.staticanalysis.CommonStaticAnalysis")
 }
