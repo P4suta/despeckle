@@ -14,7 +14,14 @@
     }
   },
   "files": {
-    "includes": ["**/*.json", "**/*.jsonc", "!target/**", "!node_modules/**", "!artifacts/**"]
+    "includes": [
+      "**/*.json",
+      "**/*.jsonc",
+      "!build/**",
+      "!.gradle/**",
+      "!.gradle-home/**",
+      "!artifacts/**"
+    ]
   },
   "linter": { "enabled": false }
 }

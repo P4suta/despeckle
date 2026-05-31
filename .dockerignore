@@ -1,8 +1,13 @@
-target/
-artifacts/
-node_modules/
 .git/
+.gradle/
+.gradle-home/
+build/
+artifacts/
+report/
+out/
+scans/
+private/
 .idea/
 .vscode/
-report/
 samples/
+*.pdf

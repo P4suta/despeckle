@@ -1,0 +1,37 @@
+# Single source of truth for dependency and plugin versions.
+# Verified against Maven Central / the Gradle Plugin Portal (2026-05).
+
+[versions]
+picocli = "4.7.7"
+slf4j = "2.0.17"
+junit = "6.1.0"
+errorprone = "2.49.0"
+nullaway = "0.13.4"
+jspecify = "1.0.0"
+archunit = "1.4.2"
+spotless = "8.6.0"
+errorprone-plugin = "5.1.0"
+spotbugs-plugin = "6.5.5"
+rewrite-plugin = "7.33.0"
+rewrite-recipe-bom = "3.31.0"
+google-java-format = "1.35.0"
+
+[libraries]
+picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }
+nullaway = { module = "com.uber.nullaway:nullaway", version.ref = "nullaway" }
+jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
+archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
+rewrite-recipe-bom = { module = "org.openrewrite.recipe:rewrite-recipe-bom", version.ref = "rewrite-recipe-bom" }
+rewrite-static-analysis = { module = "org.openrewrite.recipe:rewrite-static-analysis" }
+
+[plugins]
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+errorprone = { id = "net.ltgt.errorprone", version.ref = "errorprone-plugin" }
+spotbugs = { id = "com.github.spotbugs", version.ref = "spotbugs-plugin" }
+rewrite = { id = "org.openrewrite.rewrite", version.ref = "rewrite-plugin" }

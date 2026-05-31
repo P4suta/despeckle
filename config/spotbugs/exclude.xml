@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpotBugs exclusions. Kept deliberately small; add a <Match> only with a
+  one-line justification so the filter never silently hides real defects.
+-->
+<FindBugsFilter>
+  <!-- The report renderer builds trusted HTML from our own data and escapes
+       page stems in escape(); SpotBugs' XSS heuristic flags the StringBuilder
+       sink regardless. -->
+  <Match>
+    <Class name="io.github.p4suta.despeckle.report.Report"/>
+    <Bug pattern="XSS_REQUEST_PARAMETER_TO_SERVLET_WRITER"/>
+  </Match>
+</FindBugsFilter>
