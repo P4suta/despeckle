@@ -35,11 +35,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libleptonica-dev
-      - uses: actions/setup-java@6e9ec90e74cee72fbe9966c3ea7d35d9e094f3e3 # v5.0.0
+      - uses: actions/setup-java@3a4f6e1af504cf6a31855fa899c6aa5355ba6c12 # v5.0.0
         with:
           distribution: temurin
           java-version: "25"
-      - uses: gradle/actions/setup-gradle@0bd25d83f48d77c63dc89bfbf9ca432dc0af6b85 # v5.0.0
+      - uses: gradle/actions/setup-gradle@d9c87d481d55275bb5441eef3fe0e46805f9ef70 # v5.0.0
       # `build` runs the entire quality gate: Error Prone (compileJava),
       # Spotless (spotlessCheck), SpotBugs (spotbugsMain/Test) and the JUnit
       # suite. Toolchain auto-download is off; the setup-java JDK is used.
