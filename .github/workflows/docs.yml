@@ -1,4 +1,4 @@
-# Build `cargo doc` and deploy to GitHub Pages on every successful push to main.
+# Build Javadoc and deploy to GitHub Pages on every successful push to main.
 
 name: docs
 
@@ -18,25 +18,22 @@ concurrency:
 
 jobs:
   build:
-    name: build (cargo doc)
+    name: build (javadoc)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - name: cargo doc
-        env:
-          RUSTDOCFLAGS: -D warnings
-        run: cargo doc --workspace --no-deps
-      - name: write redirect index.html (stable rustdoc has no auto-index)
-        run: |
-          cat > target/doc/index.html <<'HTML'
-          <!doctype html><meta http-equiv="refresh" content="0; url=despeckle_core/index.html">
-          HTML
+      - uses: actions/setup-java@6e9ec90e74cee72fbe9966c3ea7d35d9e094f3e3 # v5.0.0
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@0bd25d83f48d77c63dc89bfbf9ca432dc0af6b85 # v5.0.0
+      # `javadoc` only parses source; it does not load Leptonica, so the native
+      # library is not needed here (unlike the test job in ci.yml).
+      - run: ./gradlew javadoc --no-daemon -Dorg.gradle.java.installations.auto-download=false
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: target/doc
+          path: build/docs/javadoc
 
   deploy:
     name: deploy (gh-pages)
