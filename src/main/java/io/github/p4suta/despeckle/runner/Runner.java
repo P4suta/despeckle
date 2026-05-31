@@ -21,6 +21,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -62,7 +63,7 @@ public final class Runner {
             int jobs,
             boolean force,
             ProcessOptions options,
-            Path reportDir) {}
+            @Nullable Path reportDir) {}
 
     /**
      * Aggregate outcome of a run.
@@ -139,7 +140,7 @@ public final class Runner {
 
     private record PageOutcome(Path source, ProcessResult result) {}
 
-    private PageOutcome processOne(Path src, Config config, Report report) {
+    private PageOutcome processOne(Path src, Config config, @Nullable Report report) {
         Path dest = mirrorDestination(src, config);
         try {
             Path parent = dest.getParent();

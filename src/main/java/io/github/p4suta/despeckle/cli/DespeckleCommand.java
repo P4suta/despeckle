@@ -6,6 +6,7 @@ import io.github.p4suta.despeckle.runner.Runner;
 import java.nio.file.Path;
 import java.util.OptionalInt;
 import java.util.concurrent.Callable;
+import org.jspecify.annotations.Nullable;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Help.Visibility;
 import picocli.CommandLine.IVersionProvider;
@@ -20,16 +21,20 @@ import picocli.CommandLine.Parameters;
         description = "Remove scanner dust from bitonal Japanese-novel scans.")
 public final class DespeckleCommand implements Callable<Integer> {
 
+    // inputDir/outputDir are required positionals: picocli always assigns them
+    // before call() runs, so they are effectively non-null despite no initializer.
+    @SuppressWarnings("NullAway.Init")
     @Parameters(index = "0", description = "Directory of bitonal page images (read recursively).")
     private Path inputDir;
 
+    @SuppressWarnings("NullAway.Init")
     @Parameters(
             index = "1",
             description = "Directory to write cleaned images into (mirrors input).")
     private Path outputDir;
 
     @Option(names = "--report", description = "Write a before/overlay/after HTML report here.")
-    private Path reportDir;
+    private @Nullable Path reportDir;
 
     @Option(
             names = {"-j", "--jobs"},
@@ -61,7 +66,7 @@ public final class DespeckleCommand implements Callable<Integer> {
     @Option(
             names = "--speck-size",
             description = "Override the speck size in pixels (default: dpi/100).")
-    private Integer speckSize;
+    private @Nullable Integer speckSize;
 
     @Option(
             names = "--fill-holes",

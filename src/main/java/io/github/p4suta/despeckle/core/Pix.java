@@ -6,7 +6,7 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
-import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An owning, {@link AutoCloseable} handle to a Leptonica {@code PIX}.
@@ -21,7 +21,10 @@ import java.util.Objects;
  */
 public final class Pix implements AutoCloseable {
 
-    private MemorySegment handle;
+    // Null only after close(); every operation goes through requireHandle(), which
+    // turns a use-after-close into a clear exception (and gives NullAway a checked
+    // non-null value to reason about).
+    private @Nullable MemorySegment handle;
 
     private Pix(MemorySegment handle) {
         this.handle = handle;
@@ -48,10 +51,10 @@ public final class Pix implements AutoCloseable {
 
     /** Write this image to {@code path} using the given Leptonica {@code IFF_*} format. */
     public void write(Path path, int format) {
-        ensureOpen();
+        MemorySegment h = requireHandle();
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment name = arena.allocateFrom(path.toString());
-            int rc = Leptonica.pixWrite(name, handle, format);
+            int rc = Leptonica.pixWrite(name, h, format);
             if (rc != 0) {
                 throw new IllegalStateException(
                         "Leptonica pixWrite failed (rc=" + rc + "): " + path);
@@ -65,37 +68,34 @@ public final class Pix implements AutoCloseable {
     }
 
     public int width() {
-        ensureOpen();
-        return Leptonica.pixGetWidth(handle);
+        return Leptonica.pixGetWidth(requireHandle());
     }
 
     public int height() {
-        ensureOpen();
-        return Leptonica.pixGetHeight(handle);
+        return Leptonica.pixGetHeight(requireHandle());
     }
 
     /** The {@code IFF_*} format this image was read from (for {@code --format same}). */
     public int inputFormat() {
-        ensureOpen();
-        return Leptonica.pixGetInputFormat(handle);
+        return Leptonica.pixGetInputFormat(requireHandle());
     }
 
     /** Number of 8-connected foreground (black) components. */
     public int connectedComponents() {
-        ensureOpen();
+        MemorySegment h = requireHandle();
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment count = arena.allocate(JAVA_INT);
-            Leptonica.pixCountConnComp(handle, Leptonica.CONN_8, count);
+            Leptonica.pixCountConnComp(h, Leptonica.CONN_8, count);
             return count.get(JAVA_INT, 0);
         }
     }
 
     /** Number of foreground (black) pixels set in the image. */
     public long blackPixels() {
-        ensureOpen();
+        MemorySegment h = requireHandle();
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment count = arena.allocate(JAVA_INT);
-            Leptonica.pixCountPixels(handle, count, MemorySegment.NULL);
+            Leptonica.pixCountPixels(h, count, MemorySegment.NULL);
             return Integer.toUnsignedLong(count.get(JAVA_INT, 0));
         }
     }
@@ -111,12 +111,12 @@ public final class Pix implements AutoCloseable {
      * Milestone-0 spike, where the opposite polarity erased a solid block).
      */
     public Pix keepComponentsLargerThan(int k) {
-        ensureOpen();
+        MemorySegment h = requireHandle();
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment changed = arena.allocate(JAVA_INT);
             MemorySegment raw =
                     Leptonica.pixSelectBySize(
-                            handle,
+                            h,
                             k,
                             k,
                             Leptonica.CONN_8,
@@ -129,37 +129,41 @@ public final class Pix implements AutoCloseable {
 
     /** Return a new {@code Pix} that is the bitwise inverse of this one. */
     public Pix inverted() {
-        ensureOpen();
-        return wrap(Leptonica.pixInvert(handle), "pixInvert");
+        return wrap(Leptonica.pixInvert(requireHandle()), "pixInvert");
     }
 
     /** Whether {@code other} is pixel-identical to this image. */
     public boolean pixelsEqual(Pix other) {
-        ensureOpen();
-        other.ensureOpen();
+        MemorySegment h = requireHandle();
+        MemorySegment otherHandle = other.requireHandle();
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment same = arena.allocate(JAVA_INT);
-            Leptonica.pixEqual(handle, other.handle, same);
+            Leptonica.pixEqual(h, otherHandle, same);
             return same.get(JAVA_INT, 0) == 1;
         }
     }
 
     @Override
     public void close() {
-        if (handle == null) {
+        MemorySegment h = handle;
+        if (h == null) {
             return;
         }
         try (Arena arena = Arena.ofConfined()) {
             // pixDestroy takes a PIX **: a slot holding the pointer, nulled on return.
             MemorySegment slot = arena.allocate(ADDRESS);
-            slot.set(ADDRESS, 0, handle);
+            slot.set(ADDRESS, 0, h);
             Leptonica.pixDestroy(slot);
         } finally {
             handle = null;
         }
     }
 
-    private void ensureOpen() {
-        Objects.requireNonNull(handle, "Pix has already been closed");
+    private MemorySegment requireHandle() {
+        MemorySegment h = handle;
+        if (h == null) {
+            throw new IllegalStateException("Pix has already been closed");
+        }
+        return h;
     }
 }

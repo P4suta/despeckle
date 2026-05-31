@@ -1,5 +1,7 @@
 package io.github.p4suta.despeckle.core;
 
+import org.jspecify.annotations.Nullable;
+
 /** Selects the on-disk format for cleaned pages. */
 public enum OutputFormat {
     /** Keep the input file's format (and extension). */
@@ -24,7 +26,7 @@ public enum OutputFormat {
     }
 
     /** The output file extension, or {@code null} to keep the input's. */
-    public String extension() {
+    public @Nullable String extension() {
         return switch (this) {
             case SAME -> null;
             case PBM -> "pbm";

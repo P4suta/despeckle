@@ -1,5 +1,7 @@
 import com.github.spotbugs.snom.Confidence
 import com.github.spotbugs.snom.Effort
+import net.ltgt.gradle.errorprone.CheckSeverity
+import net.ltgt.gradle.errorprone.errorprone
 
 plugins {
     application
@@ -29,7 +31,12 @@ dependencies {
     implementation(libs.slf4j.api)
     runtimeOnly(libs.slf4j.simple)
 
+    // JSpecify @Nullable: the vocabulary NullAway reads to learn what may be null.
+    implementation(libs.jspecify)
+
     errorprone(libs.errorprone.core)
+    // NullAway runs as an Error Prone plugin (same `errorprone` configuration).
+    errorprone(libs.nullaway)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
@@ -60,6 +67,20 @@ tasks.withType<JavaCompile>().configureEach {
     // toolchain compilation, not a code-quality signal. Every code warning
     // (deprecation, unchecked, removal, ...) still fails the build.
     options.compilerArgs.addAll(listOf("-Xlint:all,-options", "-Werror"))
+    // NullAway: a missing null check inside our own package is a build error.
+    options.errorprone {
+        disableWarningsInGeneratedCode = true
+        check("NullAway", CheckSeverity.ERROR)
+        option("NullAway:AnnotatedPackages", "io.github.p4suta.despeckle")
+    }
+}
+
+// NullAway on test sources is noisy (fixtures, deliberate nulls) for little
+// gain; keep Error Prone itself on there, but turn NullAway off for the tests.
+tasks.named<JavaCompile>("compileTestJava") {
+    options.errorprone {
+        check("NullAway", CheckSeverity.OFF)
+    }
 }
 
 tasks.test {
