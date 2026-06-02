@@ -15,6 +15,39 @@
 
 # syntax=docker/dockerfile:1.7
 
+# ----- jbig2enc: lossless JBIG2 encoder, built from source -----
+# Not packaged for Debian/Ubuntu, so it is built here. Lossless JBIG2 (generic
+# region coding — never the lossy symbol substitution) lets `just to-pdf` pack
+# cleaned bitonal pages far tighter than CCITT G4 while staying pixel-exact.
+# Built in a throwaway stage so the dev image carries only the resulting `jbig2`
+# binary, never the C/C++ toolchain.
+FROM eclipse-temurin:25-jdk-noble AS jbig2enc-build
+
+ENV DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        autoconf \
+        automake \
+        build-essential \
+        ca-certificates \
+        git \
+        libleptonica-dev \
+        libtool \
+        zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pinned to a release tag so the image is reproducible from the repo alone.
+ARG JBIG2ENC_VERSION=0.29
+RUN git clone --depth 1 --branch "${JBIG2ENC_VERSION}" \
+        https://github.com/agl/jbig2enc /tmp/jbig2enc \
+    && cd /tmp/jbig2enc \
+    && ./autogen.sh \
+    && ./configure \
+    && make -j"$(nproc)" \
+    && make install DESTDIR=/dist
+
 FROM eclipse-temurin:25-jdk-noble AS dev
 
 ARG USER_UID=1000
@@ -44,6 +77,10 @@ RUN apt-get update \
         sudo \
         unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# jbig2enc's `jbig2` binary, built in the stage above. It dynamically links the
+# runtime liblept.so.5 that libleptonica-dev just installed.
+COPY --from=jbig2enc-build /dist/usr/local/bin/jbig2 /usr/local/bin/jbig2
 
 # ----- language-agnostic quality tools (pinned static binaries) -----
 

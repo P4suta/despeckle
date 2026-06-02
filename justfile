@@ -59,6 +59,7 @@ doctor:
         check just       just --version; \
         check pdfimages  pdfimages -v; \
         check img2pdf    img2pdf --version; \
+        check jbig2      jbig2 --version; \
         check qpdf       qpdf --version; \
         check exiftool   exiftool -ver; \
         check pikepdf    python3 -c "import pikepdf; print(pikepdf.__version__)"; \
@@ -217,11 +218,13 @@ _hook-actionlint +files:
     echo "✗ actionlint found workflow problems (listed above); fix them before committing." >&2
     exit 1
 
-# ----- scan pipeline (pdfimages in, img2pdf out; both bundled in the dev image) -----
+# ----- scan pipeline (pdfimages in; lossless JBIG2 out for pages, img2pdf for
+# color overlays) -----
 #
-# PBM files carry no DPI tag, so img2pdf would default to 96 dpi and stretch the
-# page across ~30 cm. Pass the source DPI explicitly via --imgsize so the PDF
-# page matches the physical scan. Override with DESPECKLE_DPI=<n>.
+# Bitonal pages carry no reliable DPI (PBM has none; img2pdf would assume 96 and
+# stretch the page across ~30 cm), so the physical page size is set from
+# DESPECKLE_DPI (default 600). Cleaned pages pack as lossless JBIG2; the color
+# overlays, which JBIG2 cannot represent, stay on img2pdf.
 
 dpi := env_var_or_default("DESPECKLE_DPI", "600")
 
@@ -238,21 +241,18 @@ extract pdf out_dir:
     {{sh}} 'python3 scripts/stamp-dpi.py "{{pdf}}" "{{out_dir}}"'
     @echo "extracted $(ls {{out_dir}} | wc -l) TIFF pages to {{out_dir}}"
 
-# Roll a directory of cleaned pages into one PDF for human review. img2pdf only
-# emits a bare PDF 1.3 tagged with its own name; a finalize pass rewrites that to
-# PDF 1.7 and, given the original scan as the optional third arg, copies its
-# metadata (Info dict + XMP) across verbatim so the cleaned book keeps the
-# source's title/author/dates.
+# Roll a directory of cleaned bitonal pages into one PDF for human review, packed
+# as lossless JBIG2 (generic region coding — bit-exact, and smaller than the
+# source scan's own images). The output is PDF 1.7; given the original scan as
+# the optional third arg, its metadata (Info dict + XMP) is inherited verbatim.
 # Example: `just to-pdf out/book out/book.pdf book.pdf`
 to-pdf in out source="":
     {{sh}} 'set -euo pipefail; \
         mkdir -p "$(dirname "{{out}}")"; \
-        tmp="$(mktemp --suffix=.pdf)"; \
-        img2pdf --imgsize "{{dpi}}dpix{{dpi}}dpi" {{in}}/* --output "$tmp"; \
-        python3 scripts/finalize-pdf.py "$tmp" "{{out}}" "{{source}}"; \
-        rm -f "$tmp"'
+        python3 scripts/jbig2-pdf.py "{{in}}" "{{out}}" "{{source}}" "{{dpi}}"'
 
-# Bulk-pack every artifacts/*-cleaned/ directory into artifacts/*-cleaned.pdf.
+# Bulk-pack every artifacts/*-cleaned/ directory into artifacts/*-cleaned.pdf
+# (lossless JBIG2).
 to-all-pdfs:
     {{docker_run}} bash -c "\
         set -euo pipefail; \
@@ -260,7 +260,7 @@ to-all-pdfs:
             [ -d \"\$dir\" ] || continue; \
             out=\"\${dir}.pdf\"; \
             echo \"==> \$dir -> \$out @ {{dpi}} dpi\"; \
-            img2pdf --imgsize \"{{dpi}}dpix{{dpi}}dpi\" \"\$dir\"/* --output \"\$out\"; \
+            python3 scripts/jbig2-pdf.py \"\$dir\" \"\$out\" \"\" \"{{dpi}}\"; \
         done"
 
 # Pack every artifacts/*-report/overlay/ directory into one PDF so you can scrub

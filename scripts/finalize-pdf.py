@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""Turn img2pdf's bare output into a proper PDF: version 1.7, inherited metadata.
+"""Rewrite img2pdf's bare output to PDF 1.7 with the source's metadata.
+
+This is the color path — used for the overlay PDFs, which JBIG2 cannot
+represent. Cleaned bitonal pages go through jbig2-pdf.py instead.
 
 img2pdf writes a minimal PDF 1.3 whose only metadata is its own Producer and the
-current date. This rewrites it to PDF 1.7 and, when a source PDF is given, copies
-that file's document Info dictionary and XMP packet across verbatim, so the
-cleaned book keeps the original's title, author, dates, etc.
+build date. Given a source PDF, that file's document Info dictionary and XMP
+packet are copied across verbatim. Only metadata and the version header change;
+the page content streams are preserved.
 
-Only metadata and the version header change; the page content streams are
-preserved.
-
-    finalize-pdf.py <img2pdf.pdf> <output.pdf> [source.pdf]
+    finalize-pdf.py <input.pdf> <output.pdf> [source.pdf]
 """
 import sys
 
 import pikepdf
+
+import pdfmeta
 
 
 def main():
@@ -23,23 +25,9 @@ def main():
     source = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else None
 
     with pikepdf.open(inp) as pdf:
-        if source:
-            with pikepdf.open(source) as src:
-                # Inherit the document Info dictionary verbatim.
-                info = pdf.docinfo
-                for key in list(info.keys()):
-                    del info[key]
-                for key, value in src.docinfo.items():
-                    info[key] = pikepdf.String(str(value))
-                # Inherit the XMP metadata packet, if the source carries one.
-                src_xmp = src.Root.get("/Metadata")
-                if src_xmp is not None:
-                    pdf.Root.Metadata = pdf.copy_foreign(src_xmp)
-                note = f" with inherited metadata from {source}"
-        else:
-            note = ""
+        pdfmeta.save_pdf17(pdf, out, source)
 
-        pdf.save(out, force_version="1.7")
+    note = f" with inherited metadata from {source}" if source else ""
     print(f"wrote {out} as PDF 1.7{note}")
 
 
