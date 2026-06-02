@@ -154,6 +154,12 @@ final class Leptonica {
                     FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT));
     private static final MethodHandle PIX_INVERT =
             handle("pixInvert", FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS));
+    private static final MethodHandle PIX_SUBTRACT =
+            handle("pixSubtract", FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS, ADDRESS));
+    private static final MethodHandle PIX_DILATE_BRICK =
+            handle(
+                    "pixDilateBrick",
+                    FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS, JAVA_INT, JAVA_INT));
     private static final MethodHandle PIX_EQUAL =
             handle("pixEqual", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS));
     private static final MethodHandle PIX_COUNT_CONN_COMP =
@@ -254,6 +260,24 @@ final class Leptonica {
             return (MemorySegment) PIX_INVERT.invoke(MemorySegment.NULL, src);
         } catch (Throwable t) {
             throw sneaky("pixInvert", t);
+        }
+    }
+
+    /** {@code s1 AND NOT s2} into a fresh {@code PIX} (the {@code pixd == NULL} path). */
+    static MemorySegment pixSubtract(MemorySegment s1, MemorySegment s2) {
+        try {
+            return (MemorySegment) PIX_SUBTRACT.invoke(MemorySegment.NULL, s1, s2);
+        } catch (Throwable t) {
+            throw sneaky("pixSubtract", t);
+        }
+    }
+
+    /** Dilate {@code src} by a {@code hsize x vsize} brick (odd sizes) into a fresh {@code PIX}. */
+    static MemorySegment pixDilateBrick(MemorySegment src, int hsize, int vsize) {
+        try {
+            return (MemorySegment) PIX_DILATE_BRICK.invoke(MemorySegment.NULL, src, hsize, vsize);
+        } catch (Throwable t) {
+            throw sneaky("pixDilateBrick", t);
         }
     }
 

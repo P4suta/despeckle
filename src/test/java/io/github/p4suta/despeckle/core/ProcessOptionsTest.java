@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 final class ProcessOptionsTest {
 
     private static ProcessOptions of(OptionalInt dpi, OptionalInt speck) {
-        return new ProcessOptions(dpi, speck, true);
+        return ProcessOptions.of(dpi, speck, true);
     }
 
     @Test
@@ -53,6 +53,45 @@ final class ProcessOptionsTest {
         assertFalse(defaults.dpi().isPresent());
         assertFalse(defaults.speckSizePx().isPresent());
         assertTrue(defaults.fillHoles());
+        assertFalse(defaults.isolatedDustEnabled(), "the isolated-dust pass is opt-in");
+    }
+
+    @Test
+    void isolatedDustIsEnabledByEitherTheFlagOrAnExplicitSize() {
+        assertFalse(of(OptionalInt.empty(), OptionalInt.empty()).isolatedDustEnabled());
+        assertTrue(
+                new ProcessOptions(
+                                OptionalInt.empty(),
+                                OptionalInt.empty(),
+                                true,
+                                true,
+                                OptionalInt.empty())
+                        .isolatedDustEnabled(),
+                "the flag alone enables it");
+        assertTrue(
+                new ProcessOptions(
+                                OptionalInt.empty(),
+                                OptionalInt.empty(),
+                                true,
+                                false,
+                                OptionalInt.of(12))
+                        .isolatedDustEnabled(),
+                "an explicit size implies it");
+    }
+
+    @Test
+    void isolatedDustSizeDerivesFromResolutionOrIsOverridden() {
+        ProcessOptions derived =
+                new ProcessOptions(
+                        OptionalInt.empty(), OptionalInt.empty(), true, true, OptionalInt.empty());
+        assertEquals(15, derived.isolatedDustSize(600), "~15 px at 600 dpi (dpi/40)");
+        assertEquals(derived.isolatedDustSize(600) + 6, derived.isolatedDustProximity(600));
+
+        ProcessOptions explicit =
+                new ProcessOptions(
+                        OptionalInt.empty(), OptionalInt.of(3), true, true, OptionalInt.of(12));
+        assertEquals(12, explicit.isolatedDustSize(600), "an explicit size wins");
+        assertEquals(12 + 3, explicit.isolatedDustProximity(600), "proximity = size + speck size");
     }
 
     @Test
@@ -61,5 +100,14 @@ final class ProcessOptionsTest {
                 IllegalArgumentException.class, () -> of(OptionalInt.of(0), OptionalInt.empty()));
         assertThrows(
                 IllegalArgumentException.class, () -> of(OptionalInt.empty(), OptionalInt.of(-1)));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new ProcessOptions(
+                                OptionalInt.empty(),
+                                OptionalInt.empty(),
+                                true,
+                                true,
+                                OptionalInt.of(0)));
     }
 }
