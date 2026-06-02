@@ -233,10 +233,19 @@ extract pdf out_dir:
     {{sh}} 'python3 scripts/stamp-dpi.py "{{pdf}}" "{{out_dir}}"'
     @echo "extracted $(ls {{out_dir}} | wc -l) TIFF pages to {{out_dir}}"
 
-# Roll a directory of cleaned pages into one PDF for human review.
-# Example: `just to-pdf out/book out/book.pdf`
-to-pdf in out:
-    {{sh}} 'mkdir -p "$(dirname "{{out}}")" && img2pdf --imgsize "{{dpi}}dpix{{dpi}}dpi" {{in}}/* --output {{out}}'
+# Roll a directory of cleaned pages into one PDF for human review. img2pdf only
+# emits a bare PDF 1.3 tagged with its own name; a finalize pass rewrites that to
+# PDF 1.7 and, given the original scan as the optional third arg, copies its
+# metadata (Info dict + XMP) across verbatim so the cleaned book keeps the
+# source's title/author/dates.
+# Example: `just to-pdf out/book out/book.pdf book.pdf`
+to-pdf in out source="":
+    {{sh}} 'set -euo pipefail; \
+        mkdir -p "$(dirname "{{out}}")"; \
+        tmp="$(mktemp --suffix=.pdf)"; \
+        img2pdf --imgsize "{{dpi}}dpix{{dpi}}dpi" {{in}}/* --output "$tmp"; \
+        python3 scripts/finalize-pdf.py "$tmp" "{{out}}" "{{source}}"; \
+        rm -f "$tmp"'
 
 # Bulk-pack every artifacts/*-cleaned/ directory into artifacts/*-cleaned.pdf.
 to-all-pdfs:

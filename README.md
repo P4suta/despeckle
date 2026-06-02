@@ -55,7 +55,7 @@ Given a real scan PDF:
 ```sh
 just extract mybook.pdf scans/mybook          # pdftoppm -mono -r 300
 just run scans/mybook out/mybook --report report/mybook --force
-just to-pdf out/mybook out/mybook.pdf         # img2pdf, DPI-tagged
+just to-pdf out/mybook out/mybook.pdf mybook.pdf  # PDF 1.7, inherits source metadata
 ```
 
 ## CLI
