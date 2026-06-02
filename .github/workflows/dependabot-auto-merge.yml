@@ -1,9 +1,14 @@
 # Auto-merge Dependabot PRs once required CI passes.
 #
 # Policy:
-#   - All `patch` and `minor` bumps: auto-approve + auto-merge (squash).
+#   - `patch` and `minor` bumps: enable auto-merge (squash). GitHub holds the PR
+#     until main's required checks (build + lint) are green, then merges it.
 #   - `major` bumps: skip — leave for manual review since they often need
 #     code adaptation.
+#
+# main's branch protection requires green CI, not approvals, so there is no
+# separate approve step; that protection is what makes `--auto` wait for checks
+# instead of merging immediately.
 
 name: dependabot-auto-merge
 
