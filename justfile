@@ -46,17 +46,23 @@ bootstrap:
 doctor:
     @echo "==> despeckle doctor"
     @{{docker_run}} bash -c 'set -e; \
-        check() { printf "  %-12s " "$1"; out=$($2 2>&1 | head -1) && printf "ok    %s\n" "$out" || { printf "MISSING\n"; exit 1; }; }; \
-        check java       "java -version"; \
-        check typos      "typos --version"; \
-        check taplo      "taplo --version"; \
-        check biome      "biome --version"; \
-        check yamlfmt    "yamlfmt --version"; \
-        check actionlint "actionlint -version"; \
-        check lefthook   "lefthook version"; \
-        check just       "just --version"; \
-        check pdfimages  "pdfimages -v"; \
-        check img2pdf    "img2pdf --version"; \
+        check() { name="$1"; shift; printf "  %-12s " "$name"; \
+            if out=$("$@" 2>&1); then printf "ok    %s\n" "$(head -n1 <<<"$out")"; \
+            else printf "MISSING\n"; exit 1; fi; }; \
+        check java       java -version; \
+        check typos      typos --version; \
+        check taplo      taplo --version; \
+        check biome      biome --version; \
+        check yamlfmt    yamlfmt --version; \
+        check actionlint actionlint -version; \
+        check lefthook   lefthook version; \
+        check just       just --version; \
+        check pdfimages  pdfimages -v; \
+        check img2pdf    img2pdf --version; \
+        check jbig2      jbig2 --version; \
+        check qpdf       qpdf --version; \
+        check exiftool   exiftool -ver; \
+        check pikepdf    python3 -c "import pikepdf; print(pikepdf.__version__)"; \
     '
     @echo "==> doctor: ok"
 
@@ -115,12 +121,13 @@ run-sample:
 
 # ----- format / lint (mirrors CI + the lefthook gates) -----
 
-# Auto-format everything in place.
+# Auto-format everything in place (spelling included).
 fmt:
     {{gradlew}} spotlessApply {{gradle_flags}}
     {{taplo}} fmt
     {{biome}} format --write .
     {{yamlfmt}} .
+    {{typos}} --write-changes
 
 # Verify formatting without writing (what CI checks).
 fmt-check:
@@ -129,20 +136,28 @@ fmt-check:
     {{biome}} format .
     {{yamlfmt}} --lint .
 
+# Spell-check and fix in place — the default. CI and the gates use typos-check.
 typos:
-    {{typos}}
-
-typos-fix:
     {{typos}} --write-changes
+
+# Spell-check without writing (what CI and the pre-push gate run).
+typos-check:
+    {{typos}}
 
 actionlint:
     {{actionlint}} .github/workflows/*.yml
 
 # Aggregated lint gate (mirrors CI's lint-peripheral plus Spotless).
-lint: fmt-check typos actionlint
+lint: fmt-check typos-check actionlint
 
 # Local CI replica: lint + the full build (which also runs the tests).
 ci: lint build
+
+# Check the dev image's pinned tools against their latest upstream release.
+# The apt tools (qpdf, exiftool, ...) track the Ubuntu base and are not pinned,
+# so only the ARG-pinned downloads (just, typos, jbig2enc, ...) are compared.
+tools-latest:
+    {{docker_run}} python3 scripts/check-tool-versions.py
 
 # ----- git hooks -----
 
@@ -212,11 +227,13 @@ _hook-actionlint +files:
     echo "✗ actionlint found workflow problems (listed above); fix them before committing." >&2
     exit 1
 
-# ----- scan pipeline (pdfimages in, img2pdf out; both bundled in the dev image) -----
+# ----- scan pipeline (pdfimages in; lossless JBIG2 out for pages, img2pdf for
+# color overlays) -----
 #
-# PBM files carry no DPI tag, so img2pdf would default to 96 dpi and stretch the
-# page across ~30 cm. Pass the source DPI explicitly via --imgsize so the PDF
-# page matches the physical scan. Override with DESPECKLE_DPI=<n>.
+# Bitonal pages carry no reliable DPI (PBM has none; img2pdf would assume 96 and
+# stretch the page across ~30 cm), so the physical page size is set from
+# DESPECKLE_DPI (default 600). Cleaned pages pack as lossless JBIG2; the color
+# overlays, which JBIG2 cannot represent, stay on img2pdf.
 
 dpi := env_var_or_default("DESPECKLE_DPI", "600")
 
@@ -233,12 +250,18 @@ extract pdf out_dir:
     {{sh}} 'python3 scripts/stamp-dpi.py "{{pdf}}" "{{out_dir}}"'
     @echo "extracted $(ls {{out_dir}} | wc -l) TIFF pages to {{out_dir}}"
 
-# Roll a directory of cleaned pages into one PDF for human review.
-# Example: `just to-pdf out/book out/book.pdf`
-to-pdf in out:
-    {{sh}} 'mkdir -p "$(dirname "{{out}}")" && img2pdf --imgsize "{{dpi}}dpix{{dpi}}dpi" {{in}}/* --output {{out}}'
+# Roll a directory of cleaned bitonal pages into one PDF for human review, packed
+# as lossless JBIG2 (generic region coding — bit-exact, and smaller than the
+# source scan's own images). The output is PDF 1.7; given the original scan as
+# the optional third arg, its metadata (Info dict + XMP) is inherited verbatim.
+# Example: `just to-pdf out/book out/book.pdf book.pdf`
+to-pdf in out source="":
+    {{sh}} 'set -euo pipefail; \
+        mkdir -p "$(dirname "{{out}}")"; \
+        python3 scripts/jbig2-pdf.py "{{in}}" "{{out}}" "{{source}}" "{{dpi}}"'
 
-# Bulk-pack every artifacts/*-cleaned/ directory into artifacts/*-cleaned.pdf.
+# Bulk-pack every artifacts/*-cleaned/ directory into artifacts/*-cleaned.pdf
+# (lossless JBIG2).
 to-all-pdfs:
     {{docker_run}} bash -c "\
         set -euo pipefail; \
@@ -246,7 +269,7 @@ to-all-pdfs:
             [ -d \"\$dir\" ] || continue; \
             out=\"\${dir}.pdf\"; \
             echo \"==> \$dir -> \$out @ {{dpi}} dpi\"; \
-            img2pdf --imgsize \"{{dpi}}dpix{{dpi}}dpi\" \"\$dir\"/* --output \"\$out\"; \
+            python3 scripts/jbig2-pdf.py \"\$dir\" \"\$out\" \"\" \"{{dpi}}\"; \
         done"
 
 # Pack every artifacts/*-report/overlay/ directory into one PDF so you can scrub

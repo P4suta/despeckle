@@ -8,6 +8,10 @@
 /report/
 /out/
 
+# Python (the scripts/ helpers)
+__pycache__/
+*.pyc
+
 # IDE / editor
 .idea/
 .vscode/

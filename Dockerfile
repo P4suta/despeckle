@@ -5,6 +5,8 @@
 #   - Temurin JDK 25 (FFM is final since 22; 25 is the current LTS).
 #   - Leptonica (liblept.so.5) — the despeckle core calls it through FFM.
 #   - poppler-utils (pdftoppm) + img2pdf — expand scan PDFs in / repack out.
+#   - PDF toolbox: qpdf, ghostscript, exiftool, and pikepdf (the finalize pass
+#     that sets the output to PDF 1.7 and inherits the source's metadata).
 #   - The language-agnostic quality tools the repo already uses
 #     (typos, taplo, biome, yamlfmt, actionlint, lefthook).
 #
@@ -12,6 +14,40 @@
 # pinned distribution, so the build is reproducible from the repo alone.
 
 # syntax=docker/dockerfile:1.7
+
+# ----- jbig2enc: lossless JBIG2 encoder, built from source -----
+# Not packaged for Debian/Ubuntu, so it is built here. Lossless JBIG2 (generic
+# region coding — never the lossy symbol substitution) lets `just to-pdf` pack
+# cleaned bitonal pages far tighter than CCITT G4 while staying pixel-exact.
+# Built in a throwaway stage so the dev image carries only the resulting `jbig2`
+# binary, never the C/C++ toolchain.
+FROM eclipse-temurin:25-jdk-noble AS jbig2enc-build
+
+ENV DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        autoconf \
+        automake \
+        build-essential \
+        ca-certificates \
+        git \
+        libleptonica-dev \
+        libtool \
+        pkg-config \
+        zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pinned to a release tag so the image is reproducible from the repo alone.
+ARG JBIG2ENC_VERSION=0.31
+RUN git clone --depth 1 --branch "${JBIG2ENC_VERSION}" \
+        https://github.com/agl/jbig2enc /tmp/jbig2enc \
+    && cd /tmp/jbig2enc \
+    && ./autogen.sh \
+    && ./configure \
+    && make -j"$(nproc)" \
+    && make install DESTDIR=/dist
 
 FROM eclipse-temurin:25-jdk-noble AS dev
 
@@ -30,23 +66,32 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
+        ghostscript \
         git \
         img2pdf \
+        libimage-exiftool-perl \
         libleptonica-dev \
         poppler-utils \
+        python3-pikepdf \
+        python3-pil \
+        qpdf \
         sudo \
         unzip \
     && rm -rf /var/lib/apt/lists/*
 
+# jbig2enc's `jbig2` binary, built in the stage above. It dynamically links the
+# runtime liblept.so.5 that libleptonica-dev just installed.
+COPY --from=jbig2enc-build /dist/usr/local/bin/jbig2 /usr/local/bin/jbig2
+
 # ----- language-agnostic quality tools (pinned static binaries) -----
 
 # just (command runner).
-ARG JUST_VERSION=1.42.4
+ARG JUST_VERSION=1.51.0
 RUN curl -fsSL "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
     | tar xz -C /usr/local/bin just
 
 # lefthook (git hooks runner) — .deb release.
-ARG LEFTHOOK_VERSION=1.13.6
+ARG LEFTHOOK_VERSION=2.1.9
 RUN curl -fsSL -o /tmp/lefthook.deb \
         "https://github.com/evilmartians/lefthook/releases/download/v${LEFTHOOK_VERSION}/lefthook_${LEFTHOOK_VERSION}_amd64.deb" \
     && dpkg -i /tmp/lefthook.deb \
@@ -59,7 +104,7 @@ RUN curl -fsSL "https://github.com/crate-ci/typos/releases/download/v${TYPOS_VER
     && chmod +x /usr/local/bin/typos
 
 # taplo (TOML formatter) — gzipped single binary.
-ARG TAPLO_VERSION=0.9.3
+ARG TAPLO_VERSION=0.10.0
 RUN curl -fsSL "https://github.com/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-linux-x86_64.gz" \
     | gunzip > /usr/local/bin/taplo \
     && chmod +x /usr/local/bin/taplo
@@ -72,7 +117,7 @@ RUN curl -fsSL "https://github.com/biomejs/biome/releases/download/@biomejs/biom
     && chmod +x /usr/local/bin/biome
 
 # yamlfmt (YAML formatter).
-ARG YAMLFMT_VERSION=0.13.0
+ARG YAMLFMT_VERSION=0.21.0
 RUN curl -fsSL "https://github.com/google/yamlfmt/releases/download/v${YAMLFMT_VERSION}/yamlfmt_${YAMLFMT_VERSION}_Linux_x86_64.tar.gz" \
     | tar xz -C /usr/local/bin yamlfmt
 

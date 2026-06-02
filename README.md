@@ -15,8 +15,11 @@ DPI-aware policy, the directory/parallel driver, and the inspection report.
 
 ## Boundaries
 
-- **Image in / image out, never PDF.** Pair with `pdftoppm -mono` on the
-  way in and `img2pdf` on the way out (both bundled in the dev image).
+- **Image in / image out, never PDF.** Pair with `pdfimages` on the way in
+  and, on the way out, the `just to-pdf` recipe — which repacks the cleaned
+  pages as **lossless JBIG2** (smaller than the source scan, bit-exact),
+  emits PDF 1.7, and inherits the original's metadata. All tooling is
+  bundled in the dev image.
 - **Dust removal only.** Deskew, margin-cropping and contrast are out of
   scope.
 - **Conservative by design.** A connected component survives if its
@@ -55,7 +58,7 @@ Given a real scan PDF:
 ```sh
 just extract mybook.pdf scans/mybook          # pdftoppm -mono -r 300
 just run scans/mybook out/mybook --report report/mybook --force
-just to-pdf out/mybook out/mybook.pdf         # img2pdf, DPI-tagged
+just to-pdf out/mybook out/mybook.pdf mybook.pdf  # PDF 1.7, inherits source metadata
 ```
 
 ## CLI

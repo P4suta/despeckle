@@ -1,7 +1,8 @@
 # despeckle CI.
 #
 # Policy:
-#   - No `on: schedule`. Dependabot is the only scheduled job.
+#   - No `on: schedule` in this workflow. The only scheduled jobs are Dependabot
+#     and tool-freshness.yml (which checks the Dockerfile's ARG-pinned tools).
 #   - Every action is SHA-pinned; Dependabot bumps weekly.
 #   - Linux-only — despeckle is built and run on Linux.
 #   - The runners are bare ubuntu-latest (not the dev image), so the Java

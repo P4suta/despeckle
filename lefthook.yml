@@ -63,6 +63,6 @@ pre-push:
         - run: git rev-list --count HEAD ^@{upstream} 2>/dev/null || git rev-list --count HEAD
     lint:
       tags: lint
-      run: just fmt-check typos actionlint
+      run: just fmt-check typos-check actionlint
       only:
         - run: git rev-list --count HEAD ^@{upstream} 2>/dev/null || git rev-list --count HEAD
