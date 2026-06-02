@@ -19,13 +19,13 @@ name: io.github.p4suta.despeckle.CuratedCleanup
 displayName: despeckle curated cleanup
 description: >-
   Static analysis, JUnit 5 conventions, parameterized SLF4J logging, security
-  checks, and a JDK-21-baseline modernization pass. Excludes anything that fights
-  Spotless (formatting), NullAway/JSpecify (nullability annotations), or the
-  explicit-type / non-final-locals house style.
+  checks, and a JDK-25 modernization pass. Excludes anything that fights Spotless
+  (formatting), NullAway/JSpecify (nullability annotations), or the explicit-type
+  / non-final-locals house style.
 recipeList:
   - org.openrewrite.staticanalysis.CommonStaticAnalysis
   - org.openrewrite.java.testing.junit5.JUnit5BestPractices
   - org.openrewrite.java.testing.cleanup.AssertionsArgumentOrder
   - org.openrewrite.java.logging.slf4j.ParameterizedLogging
   - org.openrewrite.java.security.JavaSecurityBestPractices
-  - org.openrewrite.java.migrate.UpgradeToJava21
+  - org.openrewrite.java.migrate.UpgradeToJava25
