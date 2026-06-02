@@ -31,7 +31,7 @@ final class MainE2eTest {
             boolean[][] img = TestImages.blank(24, 24);
             TestImages.fillRect(img, 4, 4, 15, 19);
             TestImages.dot(img, 1, 1);
-            TestImages.writePbm(input.resolve(String.format("page-%02d.pbm", i)), img);
+            TestImages.writePbm(input.resolve("page-%02d.pbm".formatted(i)), img);
         }
 
         Runner.Config config =
@@ -48,7 +48,16 @@ final class MainE2eTest {
 
         assertEquals(3, summary.pages());
         try (Stream<Path> entries = Files.list(output)) {
-            List<String> names = entries.map(p -> p.getFileName().toString()).sorted().toList();
+            List<String> names =
+                    entries.map(
+                                    p -> {
+                                        // Path.getFileName() is nullable (a root has none); mirror
+                                        // the production guards in Runner rather than assume.
+                                        Path name = p.getFileName();
+                                        return name == null ? p.toString() : name.toString();
+                                    })
+                            .sorted()
+                            .toList();
             assertEquals(List.of("page-01.pbm", "page-02.pbm", "page-03.pbm"), names);
         }
     }

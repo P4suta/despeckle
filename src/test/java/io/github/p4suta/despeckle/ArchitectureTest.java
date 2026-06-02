@@ -1,55 +1,181 @@
 package io.github.p4suta.despeckle;
 
+import static com.tngtech.archunit.base.DescribedPredicate.not;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.simpleName;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
+import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;
+import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_THROW_GENERIC_EXCEPTIONS;
+import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_USE_JAVA_UTIL_LOGGING;
+import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_USE_JODATIME;
+import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
-import com.tngtech.archunit.core.domain.JavaClasses;
-import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.importer.ImportOption;
+import com.tngtech.archunit.junit.AnalyzeClasses;
+import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
-import org.junit.jupiter.api.Test;
 
 /**
  * Pins the architectural boundaries the README promises, so a future edit that quietly violates
  * them fails the build instead of the design eroding.
+ *
+ * <p>The class graph is imported once (production classes only) and shared across every {@link
+ * ArchTest} rule below.
  */
+@AnalyzeClasses(
+        packages = "io.github.p4suta.despeckle",
+        importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTest {
 
-    private static final JavaClasses PRODUCTION_CLASSES =
-            new ClassFileImporter()
-                    .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
-                    .importPackages("io.github.p4suta.despeckle");
+    /** Any nullness annotation ({@code @Nullable}/{@code @NonNull}/...) not from JSpecify. */
+    private static final DescribedPredicate<JavaClass> NULLNESS_ANNOTATION_NOT_FROM_JSPECIFY =
+            simpleName("Nullable")
+                    .or(simpleName("NonNull"))
+                    .or(simpleName("Nonnull"))
+                    .or(simpleName("NotNull"))
+                    .and(not(resideInAPackage("org.jspecify.annotations")))
+                    .as("a nullness annotation not from JSpecify");
 
     /**
-     * {@code core} is the reusable image-science layer: it must not reach up into the CLI, the
-     * directory/thread driver, or the report writer, so a future GUI can depend on {@code core}
-     * alone.
+     * The whole module as a strict onion: {@code Main} -> {@code cli} -> {@code runner} -> {@code
+     * report}, every layer free to reach the reusable {@code core}. Nothing may reach back up, so a
+     * future GUI can depend on {@code core} (and only {@code core}) unchanged.
      */
-    @Test
-    void coreDoesNotDependOnOuterLayers() {
-        ArchRule rule =
-                noClasses()
-                        .that()
-                        .resideInAPackage("..core..")
-                        .should()
-                        .dependOnClassesThat()
-                        .resideInAnyPackage("..cli..", "..runner..", "..report..");
-        rule.check(PRODUCTION_CLASSES);
-    }
+    @ArchTest
+    static final ArchRule layeredArchitectureIsRespected =
+            layeredArchitecture()
+                    .consideringOnlyDependenciesInLayers()
+                    .layer("Main")
+                    .definedBy("io.github.p4suta.despeckle")
+                    .layer("Cli")
+                    .definedBy("io.github.p4suta.despeckle.cli..")
+                    .layer("Runner")
+                    .definedBy("io.github.p4suta.despeckle.runner..")
+                    .layer("Report")
+                    .definedBy("io.github.p4suta.despeckle.report..")
+                    .layer("Core")
+                    .definedBy("io.github.p4suta.despeckle.core..")
+                    .whereLayer("Main")
+                    .mayNotBeAccessedByAnyLayer()
+                    .whereLayer("Cli")
+                    .mayOnlyBeAccessedByLayers("Main")
+                    .whereLayer("Runner")
+                    .mayOnlyBeAccessedByLayers("Cli")
+                    .whereLayer("Report")
+                    .mayOnlyBeAccessedByLayers("Runner")
+                    .whereLayer("Core")
+                    .mayOnlyBeAccessedByLayers("Cli", "Runner", "Report");
+
+    /** No package may sit in a dependency cycle with another. */
+    @ArchTest
+    static final ArchRule packagesAreFreeOfCycles =
+            slices().matching("io.github.p4suta.despeckle.(*)..").should().beFreeOfCycles();
+
+    /**
+     * The report writer is a leaf consumer of {@code core}; it must not reach sideways or up. This
+     * and the next two directional rules overlap with the layered rule above, but are kept for the
+     * sharper, single-edge failure message they give when a specific boundary is crossed.
+     */
+    @ArchTest
+    static final ArchRule reportDoesNotDependOnCliOrRunner =
+            noClasses()
+                    .that()
+                    .resideInAPackage("..report..")
+                    .should()
+                    .dependOnClassesThat()
+                    .resideInAnyPackage("..cli..", "..runner..");
+
+    /** The directory/thread driver takes a {@code Config}; it must not know about the CLI. */
+    @ArchTest
+    static final ArchRule runnerDoesNotDependOnCli =
+            noClasses()
+                    .that()
+                    .resideInAPackage("..runner..")
+                    .should()
+                    .dependOnClassesThat()
+                    .resideInAPackage("..cli..");
+
+    /** The CLI builds a {@code Config} for the runner; it must not reach into the report writer. */
+    @ArchTest
+    static final ArchRule cliDoesNotDependOnReport =
+            noClasses()
+                    .that()
+                    .resideInAPackage("..cli..")
+                    .should()
+                    .dependOnClassesThat()
+                    .resideInAPackage("..report..");
 
     /**
      * The Foreign Function &amp; Memory API is the one piece of native, "restricted" surface; it
-     * stays inside {@code core} (behind {@code Pix} / {@code Leptonica}) so the rest of the code is
-     * plain, safe Java.
+     * lives behind exactly two classes ({@code Pix}, the RAII handle, and {@code Leptonica}, the
+     * binding island) so the rest of the code is plain, safe Java.
      */
-    @Test
-    void foreignMemoryApiIsConfinedToCore() {
-        ArchRule rule =
-                noClasses()
-                        .that()
-                        .resideOutsideOfPackage("..core..")
-                        .should()
-                        .dependOnClassesThat()
-                        .resideInAPackage("java.lang.foreign..");
-        rule.check(PRODUCTION_CLASSES);
-    }
+    @ArchTest
+    static final ArchRule foreignMemoryApiConfinedToPixAndLeptonica =
+            noClasses()
+                    .that()
+                    .doNotHaveFullyQualifiedName("io.github.p4suta.despeckle.core.Pix")
+                    .and()
+                    .doNotHaveFullyQualifiedName("io.github.p4suta.despeckle.core.Leptonica")
+                    .should()
+                    .dependOnClassesThat()
+                    .resideInAPackage("java.lang.foreign..");
+
+    /** Raw downcall handles ({@code java.lang.invoke}) stay inside the binding island alone. */
+    @ArchTest
+    static final ArchRule methodHandlesConfinedToLeptonica =
+            noClasses()
+                    .that()
+                    .doNotHaveFullyQualifiedName("io.github.p4suta.despeckle.core.Leptonica")
+                    .should()
+                    .dependOnClassesThat()
+                    .resideInAPackage("java.lang.invoke..");
+
+    /**
+     * {@code java.nio.file.Files} (the filesystem read/write helper) belongs to the layers that own
+     * I/O ({@code runner} walks the tree, {@code report} writes panels). {@code Leptonica} is the
+     * one exception: it probes for the native library path at class-load time, which is not
+     * pipeline I/O. This pins {@code Files} specifically, not every filesystem API.
+     */
+    @ArchTest
+    static final ArchRule filesystemAccessConfined =
+            noClasses()
+                    .that()
+                    .resideOutsideOfPackages("..runner..", "..report..")
+                    .and()
+                    .doNotHaveFullyQualifiedName("io.github.p4suta.despeckle.core.Leptonica")
+                    .should()
+                    .dependOnClassesThat()
+                    .haveFullyQualifiedName("java.nio.file.Files");
+
+    /** Logging goes through SLF4J, never {@code java.util.logging}. */
+    @ArchTest static final ArchRule noJavaUtilLogging = NO_CLASSES_SHOULD_USE_JAVA_UTIL_LOGGING;
+
+    /** No JodaTime — the JDK time APIs are the standard. */
+    @ArchTest static final ArchRule noJodaTime = NO_CLASSES_SHOULD_USE_JODATIME;
+
+    /**
+     * Throw a meaningful exception type, never a bare {@code Exception}/{@code RuntimeException}.
+     */
+    @ArchTest
+    static final ArchRule noGenericExceptions = NO_CLASSES_SHOULD_THROW_GENERIC_EXCEPTIONS;
+
+    /**
+     * Nothing writes to {@code System.out}/{@code System.err}: user-facing output and progress go
+     * through SLF4J (and picocli, which lives in its own library outside this scan).
+     */
+    @ArchTest static final ArchRule noStandardStreams = NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;
+
+    /**
+     * Nullability is spoken in exactly one vocabulary — JSpecify — because that is what NullAway
+     * reads. A nullness annotation from any other library would silently fall outside the
+     * null-safety gate, so this allow-lists JSpecify and rejects every other source, including ones
+     * not yet on the classpath (an allow-list, not a denylist of known offenders).
+     */
+    @ArchTest
+    static final ArchRule nullnessAnnotationsComeFromJSpecify =
+            noClasses().should().dependOnClassesThat(NULLNESS_ANNOTATION_NOT_FROM_JSPECIFY);
 }

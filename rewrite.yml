@@ -1,0 +1,31 @@
+# despeckle's curated OpenRewrite pass. Run on demand:
+#   ./gradlew rewriteDryRun   (preview the patch; `just rewrite-check`)
+#   ./gradlew rewriteRun      (apply; `just rewrite` also runs spotlessApply)
+#
+# Deliberately NOT wired into `build` (see build.gradle.kts): a recipe never
+# blocks a commit. Formatting is owned by Spotless/google-java-format, so no
+# OpenRewrite formatting recipe appears here — CodeCleanup is deliberately NOT
+# included because it bundles layout recipes (NoWhitespaceAfter, OrderImports,
+# ShortenFullyQualifiedTypeReferences, ...) that fight google-java-format, plus
+# HideUtilityClassConstructor, which misfires on all-static test classes and is a
+# semantic edit spotlessApply cannot undo. Nullability is owned by JSpecify +
+# NullAway, so no annotate-nullable recipe appears here either. var-introduction
+# and FinalizeLocalVariables are excluded to respect the explicit-type,
+# non-final-locals house style. We pick ParameterizedLogging over the full
+# Slf4jBestPractices, whose WrapExpensiveLogStatementsInConditionals rewrites
+# already-clean parameterized calls into the verbose fluent builder.
+type: specs.openrewrite.org/v1beta/recipe
+name: io.github.p4suta.despeckle.CuratedCleanup
+displayName: despeckle curated cleanup
+description: >-
+  Static analysis, JUnit 5 conventions, parameterized SLF4J logging, security
+  checks, and a JDK-21-baseline modernization pass. Excludes anything that fights
+  Spotless (formatting), NullAway/JSpecify (nullability annotations), or the
+  explicit-type / non-final-locals house style.
+recipeList:
+  - org.openrewrite.staticanalysis.CommonStaticAnalysis
+  - org.openrewrite.java.testing.junit5.JUnit5BestPractices
+  - org.openrewrite.java.testing.cleanup.AssertionsArgumentOrder
+  - org.openrewrite.java.logging.slf4j.ParameterizedLogging
+  - org.openrewrite.java.security.JavaSecurityBestPractices
+  - org.openrewrite.java.migrate.UpgradeToJava21

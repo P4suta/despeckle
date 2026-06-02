@@ -48,6 +48,12 @@ dependencies {
     // a commit.
     rewrite(platform(libs.rewrite.recipe.bom))
     rewrite(libs.rewrite.static.analysis)
+    rewrite(libs.rewrite.testing.frameworks)
+    rewrite(libs.rewrite.logging.frameworks)
+    rewrite(libs.rewrite.migrate.java)
+    // Not in the recipe BOM, so version-pinned in the catalog; the BOM platform
+    // above still aligns its transitive rewrite-core.
+    rewrite(libs.rewrite.java.security)
 }
 
 // The one place native access is granted; reused by run, test and any JavaExec.
@@ -68,18 +74,45 @@ tasks.withType<JavaCompile>().configureEach {
     // (deprecation, unchecked, removal, ...) still fails the build.
     options.compilerArgs.addAll(listOf("-Xlint:all,-options", "-Werror"))
     // NullAway: a missing null check inside our own package is a build error.
+    // Maximally strict — full JSpecify semantics (generics, type-use positions;
+    // the source is @NullMarked per package-info), restrictive third-party
+    // annotations honored, Optional/OptionalInt emptiness flow-checked, and every
+    // override re-checked against its supertype. CheckContracts/AssertsEnabled are
+    // pre-enabled (the code has no @Contract or assert yet, so they verify nothing
+    // today) so future contracts/asserts are honored without a config change.
     options.errorprone {
         disableWarningsInGeneratedCode = true
         check("NullAway", CheckSeverity.ERROR)
+        // AnnotatedPackages is the required baseline (NullAway demands exactly one
+        // of AnnotatedPackages or OnlyNullMarked) and already marks every current
+        // and future sub-package. The @NullMarked package-info files are kept as
+        // in-source / IDE documentation and to stay honest if a package is ever
+        // moved out from under this prefix.
         option("NullAway:AnnotatedPackages", "io.github.p4suta.despeckle")
+        option("NullAway:JSpecifyMode", "true")
+        option("NullAway:AcknowledgeRestrictiveAnnotations", "true")
+        option("NullAway:CheckOptionalEmptiness", "true")
+        // The codebase models nullable numerics as OptionalInt, which the emptiness
+        // check ignores by default; name the primitive optionals so getAsInt() is
+        // flow-checked (e.g. guarded by isPresent()) like java.util.Optional.get().
+        option(
+            "NullAway:CheckOptionalEmptinessCustomClasses",
+            "java.util.OptionalInt,java.util.OptionalLong,java.util.OptionalDouble",
+        )
+        option("NullAway:CheckContracts", "true")
+        option("NullAway:ExhaustiveOverride", "true")
+        option("NullAway:AssertsEnabled", "true")
     }
 }
 
-// NullAway on test sources is noisy (fixtures, deliberate nulls) for little
-// gain; keep Error Prone itself on there, but turn NullAway off for the tests.
+// NullAway guards the tests too: they are @NullMarked, and the strict options
+// above (JSpecifyMode, restrictive annotations, ...) are inherited from the
+// shared JavaCompile block. HandleTestAssertionLibraries lets JUnit/Hamcrest/
+// AssertJ assertions establish non-null facts when a test relies on them.
 tasks.named<JavaCompile>("compileTestJava") {
     options.errorprone {
-        check("NullAway", CheckSeverity.OFF)
+        check("NullAway", CheckSeverity.ERROR)
+        option("NullAway:HandleTestAssertionLibraries", "true")
     }
 }
 
@@ -120,9 +153,16 @@ tasks.withType<com.github.spotbugs.snom.SpotBugsTask>().configureEach {
     reports.create("html") { required = true }
 }
 
-// OpenRewrite: a curated static-analysis pass run on demand with
-// `./gradlew rewriteRun` (preview with `rewriteDryRun`). Deliberately not wired
-// into `build`, so it never blocks a commit.
+// OpenRewrite: a curated pass defined declaratively in rewrite.yml (auto-discovered
+// at the project root), run on demand with `./gradlew rewriteRun` / `just rewrite`
+// (preview with `rewriteDryRun` / `just rewrite-check`). Deliberately not wired into
+// `build`, so it never blocks a commit. After rewriteRun, `just rewrite` runs
+// spotlessApply so google-java-format re-imposes the AOSP layout.
 rewrite {
-    activeRecipe("org.openrewrite.staticanalysis.CommonStaticAnalysis")
+    activeRecipe("io.github.p4suta.despeckle.CuratedCleanup")
+    // OpenRewrite's Kotlin support reformats the Gradle scripts in ways that fight
+    // Spotless/ktlint (which own them), so keep rewrite off the build files. Both
+    // globs are needed: the NIO glob matcher requires a separator, so "**/*.gradle.kts"
+    // alone misses the repo-root build.gradle.kts.
+    exclusion("**/*.gradle.kts", "*.gradle.kts")
 }
