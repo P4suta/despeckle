@@ -17,8 +17,9 @@ DPI-aware policy, the directory/parallel driver, and the inspection report.
 
 - **Image in / image out, never PDF.** Pair with `pdfimages` on the way in
   and, on the way out, the `just to-pdf` recipe — which repacks the cleaned
-  pages as **lossless JBIG2** (smaller than the source scan, bit-exact),
-  emits PDF 1.7, and inherits the original's metadata. All tooling is
+  pages as **lossless JBIG2** (smaller than the source scan, bit-exact) and,
+  since despeckle is image-in/image-out, mirrors the source PDF: same
+  metadata, same PDF version, linearized for Fast Web View. All tooling is
   bundled in the dev image.
 - **Dust removal only.** Deskew, margin-cropping and contrast are out of
   scope.
@@ -58,7 +59,7 @@ Given a real scan PDF:
 ```sh
 just extract mybook.pdf scans/mybook          # pdftoppm -mono -r 300
 just run scans/mybook out/mybook --report report/mybook --force
-just to-pdf out/mybook out/mybook.pdf mybook.pdf  # PDF 1.7, inherits source metadata
+just to-pdf out/mybook out/mybook.pdf mybook.pdf  # JBIG2; mirrors source metadata + version
 ```
 
 ## CLI

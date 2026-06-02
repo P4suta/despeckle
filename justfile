@@ -252,8 +252,9 @@ extract pdf out_dir:
 
 # Roll a directory of cleaned bitonal pages into one PDF for human review, packed
 # as lossless JBIG2 (generic region coding — bit-exact, and smaller than the
-# source scan's own images). The output is PDF 1.7; given the original scan as
-# the optional third arg, its metadata (Info dict + XMP) is inherited verbatim.
+# source scan's own images), linearized for Fast Web View. Given the original
+# scan as the optional third arg, the output mirrors it: its metadata (Info dict
+# + XMP) and PDF version are inherited verbatim.
 # Example: `just to-pdf out/book out/book.pdf book.pdf`
 to-pdf in out source="":
     {{sh}} 'set -euo pipefail; \

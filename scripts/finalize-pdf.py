@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Rewrite img2pdf's bare output to PDF 1.7 with the source's metadata.
+"""Re-finish img2pdf's bare output to match the source scan.
 
 This is the color path — used for the overlay PDFs, which JBIG2 cannot
 represent. Cleaned bitonal pages go through jbig2-pdf.py instead.
 
-img2pdf writes a minimal PDF 1.3 whose only metadata is its own Producer and the
-build date. Given a source PDF, that file's document Info dictionary and XMP
-packet are copied across verbatim. Only metadata and the version header change;
-the page content streams are preserved.
+img2pdf writes a minimal PDF whose only metadata is its own Producer and the
+build date. Given a source PDF, that file's Info dictionary, XMP packet, and PDF
+version are inherited; the result is linearized for Fast Web View either way.
+Only metadata and the version header change; the page streams are preserved.
 
     finalize-pdf.py <input.pdf> <output.pdf> [source.pdf]
 """
@@ -25,10 +25,10 @@ def main():
     source = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else None
 
     with pikepdf.open(inp) as pdf:
-        pdfmeta.save_pdf17(pdf, out, source)
+        pdfmeta.save_like_source(pdf, out, source)
 
-    note = f" with inherited metadata from {source}" if source else ""
-    print(f"wrote {out} as PDF 1.7{note}")
+    note = f", metadata + version from {source}" if source else ""
+    print(f"wrote {out}{note}")
 
 
 if __name__ == "__main__":
