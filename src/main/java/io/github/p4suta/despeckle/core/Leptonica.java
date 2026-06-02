@@ -146,6 +146,12 @@ final class Leptonica {
             handle("pixGetHeight", FunctionDescriptor.of(JAVA_INT, ADDRESS));
     private static final MethodHandle PIX_GET_INPUT_FORMAT =
             handle("pixGetInputFormat", FunctionDescriptor.of(JAVA_INT, ADDRESS));
+    private static final MethodHandle PIX_GET_X_RES =
+            handle("pixGetXRes", FunctionDescriptor.of(JAVA_INT, ADDRESS));
+    private static final MethodHandle PIX_SET_RESOLUTION =
+            handle(
+                    "pixSetResolution",
+                    FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT));
     private static final MethodHandle PIX_INVERT =
             handle("pixInvert", FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS));
     private static final MethodHandle PIX_EQUAL =
@@ -221,6 +227,24 @@ final class Leptonica {
             return (int) PIX_GET_INPUT_FORMAT.invoke(pix);
         } catch (Throwable t) {
             throw sneaky("pixGetInputFormat", t);
+        }
+    }
+
+    /** The image's horizontal resolution in DPI, or 0 if the source carried none. */
+    static int pixGetXRes(MemorySegment pix) {
+        try {
+            return (int) PIX_GET_X_RES.invoke(pix);
+        } catch (Throwable t) {
+            throw sneaky("pixGetXRes", t);
+        }
+    }
+
+    /** Set both axes' resolution in DPI so a format that records it writes an accurate tag. */
+    static int pixSetResolution(MemorySegment pix, int xres, int yres) {
+        try {
+            return (int) PIX_SET_RESOLUTION.invoke(pix, xres, yres);
+        } catch (Throwable t) {
+            throw sneaky("pixSetResolution", t);
         }
     }
 

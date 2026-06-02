@@ -59,9 +59,11 @@ public final class DespeckleCommand implements Callable<Integer> {
     @Option(
             names = "--dpi",
             description =
-                    "Scan resolution, used to size the speck filter (default: ${DEFAULT-VALUE}).",
-            showDefaultValue = Visibility.ALWAYS)
-    private int dpi = ProcessOptions.DEFAULT_DPI;
+                    "Scan resolution, used to size the speck filter. Default: each page's embedded"
+                            + " resolution, falling back to "
+                            + ProcessOptions.DEFAULT_DPI
+                            + " when the image carries none.")
+    private @Nullable Integer dpi;
 
     @Option(
             names = "--speck-size",
@@ -78,7 +80,7 @@ public final class DespeckleCommand implements Callable<Integer> {
     public Integer call() throws Exception {
         ProcessOptions options =
                 new ProcessOptions(
-                        dpi,
+                        dpi == null ? OptionalInt.empty() : OptionalInt.of(dpi),
                         speckSize == null ? OptionalInt.empty() : OptionalInt.of(speckSize),
                         fillHoles);
         Runner.Config config =

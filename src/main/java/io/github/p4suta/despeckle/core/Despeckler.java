@@ -26,8 +26,9 @@ public final class Despeckler {
      */
     public ProcessResult process(
             Path input, Path output, OutputFormat format, ProcessOptions options) {
-        int k = options.speckSize();
         try (Pix source = Pix.read(input)) {
+            int imageDpi = source.resolution();
+            int k = options.speckSize(imageDpi);
             int componentsBefore = source.connectedComponents();
             long blackBefore = source.blackPixels();
             int sourceFormat = source.inputFormat();
@@ -42,6 +43,9 @@ public final class Despeckler {
 
                 int componentsAfter = current.connectedComponents();
                 long blackAfter = current.blackPixels();
+                // Stamp the resolution we honored, so a TIFF/PNG output carries an accurate tag.
+                // Only a known resolution is written; an unknown one is left untouched.
+                options.resolution(imageDpi).ifPresent(current::setResolution);
                 current.write(output, format.toIff(sourceFormat));
                 return new ProcessResult(
                         componentsBefore - componentsAfter, blackBefore, blackAfter);

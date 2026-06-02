@@ -32,9 +32,12 @@ read (Leptonica) → keep components larger than k, 8-connected
                  → write (Leptonica)
 ```
 
-`k` (the speck size) defaults to `dpi / 100` — about 3 px at 300 dpi.
-The PBM round-trip is pixel-identical: a page with no specks comes back
-unchanged.
+`k` (the speck size) defaults to `dpi / 100` — about 3 px at 300 dpi, 6 px
+at 600. The resolution is read from each page's own tag when `--dpi` is
+omitted (TIFFs extracted by `just extract` are stamped with the scan's true
+ppi), so a 600-dpi book needs no flag; the resolution honored is written back
+onto the cleaned output. The PBM round-trip is pixel-identical: a page with no
+specks comes back unchanged.
 
 ## Quick start
 
@@ -64,7 +67,8 @@ despeckle <INPUT_DIR> <OUTPUT_DIR>
   [--format pbm|png|same]  # output format (default: same as input)
   [--glob <PATTERN>]       # default: "*.{pbm,png,tiff,tif}"
   [--force]                # overwrite a non-empty output directory
-  [--dpi <N>]              # scan resolution, sizes the filter (default: 300)
+  [--dpi <N>]              # scan resolution, sizes the filter
+                           #   (default: each page's embedded resolution, else 300)
   [--speck-size <PX>]      # override the speck size directly
   [--[no-]fill-holes]      # fill pin-holes inside strokes (default: on)
 ```
