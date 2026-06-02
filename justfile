@@ -153,6 +153,12 @@ lint: fmt-check typos-check actionlint
 # Local CI replica: lint + the full build (which also runs the tests).
 ci: lint build
 
+# Check the dev image's pinned tools against their latest upstream release.
+# The apt tools (qpdf, exiftool, ...) track the Ubuntu base and are not pinned,
+# so only the ARG-pinned downloads (just, typos, jbig2enc, ...) are compared.
+tools-latest:
+    {{docker_run}} python3 scripts/check-tool-versions.py
+
 # ----- git hooks -----
 
 hooks:
