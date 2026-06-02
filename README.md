@@ -132,10 +132,19 @@ unchanged.
 
 - **Spotless** + google-java-format (AOSP, 100 columns)
 - **Error Prone** on every compile, `-Werror`
+- **NullAway** (JSpecify, `@NullMarked`) at ERROR on both main and test sources
 - **SpotBugs** at max effort
+- **ArchUnit** — the layered onion (so `core` stays GUI-reusable), FFM /
+  `MethodHandle` confinement, filesystem and standard-stream limits, no package
+  cycles, and JSpecify-only nullness annotations
 - **JUnit** — FFM smoke, pixel-identical round-trip, the polarity /
   connectivity pin (a tall thin stroke is kept, a 2×2 speck is dropped),
-  hole-filling, and a directory end-to-end run.
+  hole-filling, a directory end-to-end run, and the ArchUnit architecture suite.
+
+`./gradlew rewriteRun` (or `just rewrite` / `just rewrite-check`) runs an
+**OpenRewrite** advisory pass — curated static-analysis, JUnit 5, SLF4J and
+JDK-modernization recipes. It is deliberately out of `build` so it never blocks
+a commit; CI surfaces its suggested patch as a non-blocking artifact.
 
 ## License
 

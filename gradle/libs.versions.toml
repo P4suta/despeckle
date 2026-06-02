@@ -14,6 +14,11 @@ errorprone-plugin = "5.1.0"
 spotbugs-plugin = "6.5.5"
 rewrite-plugin = "7.33.0"
 rewrite-recipe-bom = "3.31.0"
+# rewrite-java-security is the one recipe module not managed by the recipe BOM,
+# so its version is pinned here. Compatibility comes from it depending on the same
+# rewrite-bom (rewrite-core) line as the recipe BOM — verify that shared line on
+# each bump; the matching 3.31.0 numbers are incidental, not the guarantee.
+rewrite-java-security = "3.31.0"
 google-java-format = "1.35.0"
 
 [libraries]
@@ -29,6 +34,10 @@ jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
 archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
 rewrite-recipe-bom = { module = "org.openrewrite.recipe:rewrite-recipe-bom", version.ref = "rewrite-recipe-bom" }
 rewrite-static-analysis = { module = "org.openrewrite.recipe:rewrite-static-analysis" }
+rewrite-testing-frameworks = { module = "org.openrewrite.recipe:rewrite-testing-frameworks" }
+rewrite-logging-frameworks = { module = "org.openrewrite.recipe:rewrite-logging-frameworks" }
+rewrite-migrate-java = { module = "org.openrewrite.recipe:rewrite-migrate-java" }
+rewrite-java-security = { module = "org.openrewrite.recipe:rewrite-java-security", version.ref = "rewrite-java-security" }
 
 [plugins]
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

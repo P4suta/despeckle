@@ -104,7 +104,7 @@ public final class Runner {
                             PageOutcome outcome = processOne(src, config, report);
                             int n = done.incrementAndGet();
                             if (n % PROGRESS_EVERY == 0 || n == files.size()) {
-                                System.err.printf("  %d/%d%n", n, files.size());
+                                LOG.info("{}/{}", n, files.size());
                             }
                             return outcome;
                         });

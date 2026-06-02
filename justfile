@@ -159,6 +159,18 @@ ci: lint build
 tools-latest:
     {{docker_run}} python3 scripts/check-tool-versions.py
 
+# ----- openrewrite (advisory; never part of `just build` or the git hooks) -----
+
+# Preview the curated OpenRewrite patch without modifying any files.
+rewrite-check:
+    {{gradlew}} rewriteDryRun {{gradle_flags}}
+
+# Apply the curated OpenRewrite pass, then let Spotless re-impose the layout.
+# OpenRewrite is intentionally opt-in — it is not in `just build` or pre-push.
+rewrite:
+    {{gradlew}} rewriteRun {{gradle_flags}}
+    {{gradlew}} spotlessApply {{gradle_flags}}
+
 # ----- git hooks -----
 
 hooks:

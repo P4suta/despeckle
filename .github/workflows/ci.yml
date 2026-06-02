@@ -83,3 +83,32 @@ jobs:
       - run: taplo fmt --check
       - run: yamlfmt --lint .
       - run: actionlint -color
+
+  rewrite-advisory:
+    name: openrewrite (advisory, non-blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Advisory only: this job must never fail the workflow. The blocking gate is
+    # the `build` job; OpenRewrite stays out of it by design (build.gradle.kts +
+    # rewrite.yml). rewriteDryRun parses sources only, so no Leptonica is needed.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165 # v5.0.0
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@4d9f0ba0025fe599b4ebab900eb7f3a1d93ef4c2 # v5.0.0
+      # Emits the proposed patch to build/reports/rewrite/rewrite.patch and exits
+      # 0 even with suggestions, so the job is informational; the upload makes the
+      # patch one click away on every PR.
+      - run: ./gradlew rewriteDryRun --no-daemon -Dorg.gradle.java.installations.auto-download=false
+      - name: upload rewrite patch
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: rewrite-patch
+          path: build/reports/rewrite/rewrite.patch
+          # warn (not ignore) so a dry-run that crashed before writing the patch is
+          # visible as an annotation, even though the job is non-blocking.
+          if-no-files-found: warn
