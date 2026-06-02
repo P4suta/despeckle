@@ -35,11 +35,12 @@ RUN apt-get update \
         git \
         libleptonica-dev \
         libtool \
+        pkg-config \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Pinned to a release tag so the image is reproducible from the repo alone.
-ARG JBIG2ENC_VERSION=0.29
+ARG JBIG2ENC_VERSION=0.31
 RUN git clone --depth 1 --branch "${JBIG2ENC_VERSION}" \
         https://github.com/agl/jbig2enc /tmp/jbig2enc \
     && cd /tmp/jbig2enc \
@@ -85,12 +86,12 @@ COPY --from=jbig2enc-build /dist/usr/local/bin/jbig2 /usr/local/bin/jbig2
 # ----- language-agnostic quality tools (pinned static binaries) -----
 
 # just (command runner).
-ARG JUST_VERSION=1.42.4
+ARG JUST_VERSION=1.51.0
 RUN curl -fsSL "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
     | tar xz -C /usr/local/bin just
 
 # lefthook (git hooks runner) — .deb release.
-ARG LEFTHOOK_VERSION=1.13.6
+ARG LEFTHOOK_VERSION=2.1.9
 RUN curl -fsSL -o /tmp/lefthook.deb \
         "https://github.com/evilmartians/lefthook/releases/download/v${LEFTHOOK_VERSION}/lefthook_${LEFTHOOK_VERSION}_amd64.deb" \
     && dpkg -i /tmp/lefthook.deb \
@@ -103,7 +104,7 @@ RUN curl -fsSL "https://github.com/crate-ci/typos/releases/download/v${TYPOS_VER
     && chmod +x /usr/local/bin/typos
 
 # taplo (TOML formatter) — gzipped single binary.
-ARG TAPLO_VERSION=0.9.3
+ARG TAPLO_VERSION=0.10.0
 RUN curl -fsSL "https://github.com/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-linux-x86_64.gz" \
     | gunzip > /usr/local/bin/taplo \
     && chmod +x /usr/local/bin/taplo
@@ -116,7 +117,7 @@ RUN curl -fsSL "https://github.com/biomejs/biome/releases/download/@biomejs/biom
     && chmod +x /usr/local/bin/biome
 
 # yamlfmt (YAML formatter).
-ARG YAMLFMT_VERSION=0.13.0
+ARG YAMLFMT_VERSION=0.21.0
 RUN curl -fsSL "https://github.com/google/yamlfmt/releases/download/v${YAMLFMT_VERSION}/yamlfmt_${YAMLFMT_VERSION}_Linux_x86_64.tar.gz" \
     | tar xz -C /usr/local/bin yamlfmt
 
