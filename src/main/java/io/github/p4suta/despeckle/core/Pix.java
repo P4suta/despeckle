@@ -80,6 +80,23 @@ public final class Pix implements AutoCloseable {
         return Leptonica.pixGetInputFormat(requireHandle());
     }
 
+    /**
+     * The horizontal resolution in DPI recorded in the source image, or {@code 0} if it carried
+     * none (PBM never does; a TIFF or PNG may).
+     */
+    public int resolution() {
+        return Leptonica.pixGetXRes(requireHandle());
+    }
+
+    /**
+     * Stamp this image's resolution (both axes) in DPI, so a format that records it — TIFF, PNG —
+     * writes an accurate tag. A no-op on the pixel data; formats with no resolution field (PBM)
+     * simply ignore it.
+     */
+    public void setResolution(int dpi) {
+        Leptonica.pixSetResolution(requireHandle(), dpi, dpi);
+    }
+
     /** Number of 8-connected foreground (black) components. */
     public int connectedComponents() {
         MemorySegment h = requireHandle();

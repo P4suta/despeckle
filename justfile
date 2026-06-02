@@ -222,11 +222,15 @@ dpi := env_var_or_default("DESPECKLE_DPI", "600")
 
 # Extract every embedded 1-bit image from a scan PDF as TIFF, preserving the
 # pixel grid exactly (no re-rasterise, no re-threshold). pdfimages decodes the
-# source codec; pdftoppm -mono was lossy on JBIG2 scans.
+# source codec; pdftoppm -mono was lossy on JBIG2 scans. The real scan
+# resolution lives only in the PDF page geometry, so a second pass stamps it
+# (pdfimages -list x-ppi) into each TIFF's resolution tag — then `just run`
+# needs no --dpi and the cleaned output stays correctly tagged.
 # Example: `just extract path/to/book.pdf private/scans/book`
 extract pdf out_dir:
     @mkdir -p {{out_dir}}
     {{pdfimages}} -tiff {{pdf}} {{out_dir}}/page
+    {{sh}} 'python3 scripts/stamp-dpi.py "{{pdf}}" "{{out_dir}}"'
     @echo "extracted $(ls {{out_dir}} | wc -l) TIFF pages to {{out_dir}}"
 
 # Roll a directory of cleaned pages into one PDF for human review.

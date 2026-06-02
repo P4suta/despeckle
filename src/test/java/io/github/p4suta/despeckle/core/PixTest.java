@@ -65,6 +65,26 @@ final class PixTest {
     }
 
     @Test
+    void resolutionIsZeroForPbmAndRoundTripsThroughPng(@TempDir Path dir) throws Exception {
+        // PBM carries no resolution; PNG does. Stamping a resolution must survive a write/read.
+        Path pbm = dir.resolve("res.pbm");
+        Path png = dir.resolve("res.png");
+        boolean[][] img = TestImages.blank(16, 16);
+        TestImages.fillRect(img, 4, 4, 11, 11);
+        TestImages.writePbm(pbm, img);
+
+        try (Pix pix = Pix.read(pbm)) {
+            assertEquals(0, pix.resolution(), "a PBM source carries no resolution");
+            pix.setResolution(600);
+            pix.writePng(png);
+        }
+        try (Pix reread = Pix.read(png)) {
+            assertEquals(
+                    600, reread.resolution(), "the stamped resolution survives the round-trip");
+        }
+    }
+
+    @Test
     void invertIsReversible(@TempDir Path dir) throws Exception {
         Path pbm = dir.resolve("inv.pbm");
         boolean[][] img = TestImages.blank(20, 12);

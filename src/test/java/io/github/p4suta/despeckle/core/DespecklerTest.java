@@ -31,7 +31,7 @@ final class DespecklerTest {
                         src,
                         out,
                         OutputFormat.PBM,
-                        new ProcessOptions(300, OptionalInt.of(3), false));
+                        new ProcessOptions(OptionalInt.of(300), OptionalInt.of(3), false));
 
         // Three specks gone, glyph kept => 3 components removed.
         assertEquals(3, result.componentsRemoved());
@@ -54,13 +54,50 @@ final class DespecklerTest {
                         src,
                         out,
                         OutputFormat.PBM,
-                        new ProcessOptions(300, OptionalInt.of(3), false));
+                        new ProcessOptions(OptionalInt.of(300), OptionalInt.of(3), false));
 
         assertEquals(0, result.componentsRemoved());
         assertEquals(0.0, result.removedBlackPixelRatio());
         try (Pix before = Pix.read(src);
                 Pix after = Pix.read(out)) {
             assertTrue(before.pixelsEqual(after), "a dust-free page must come back unchanged");
+        }
+    }
+
+    @Test
+    void stampsResolvedResolutionOntoOutput(@TempDir Path dir) throws Exception {
+        // A PBM input carries no resolution; with an explicit --dpi the cleaned PNG must come back
+        // carrying that resolution as an accurate tag.
+        Path src = dir.resolve("page.pbm");
+        Path out = dir.resolve("page-out.png");
+        boolean[][] img = TestImages.blank(20, 20);
+        TestImages.fillRect(img, 4, 4, 15, 15);
+        TestImages.writePbm(src, img);
+
+        despeckler.process(
+                src,
+                out,
+                OutputFormat.PNG,
+                new ProcessOptions(OptionalInt.of(600), OptionalInt.empty(), false));
+
+        try (Pix cleaned = Pix.read(out)) {
+            assertEquals(600, cleaned.resolution(), "the honored resolution is stamped on output");
+        }
+    }
+
+    @Test
+    void leavesResolutionUnsetWhenNoneIsKnown(@TempDir Path dir) throws Exception {
+        // No --dpi and a resolution-less PBM input: the tool must not fabricate a tag on output.
+        Path src = dir.resolve("page.pbm");
+        Path out = dir.resolve("page-out.png");
+        boolean[][] img = TestImages.blank(20, 20);
+        TestImages.fillRect(img, 4, 4, 15, 15);
+        TestImages.writePbm(src, img);
+
+        despeckler.process(src, out, OutputFormat.PNG, ProcessOptions.defaults());
+
+        try (Pix cleaned = Pix.read(out)) {
+            assertEquals(0, cleaned.resolution(), "an unknown resolution is left unstamped");
         }
     }
 
@@ -79,7 +116,7 @@ final class DespecklerTest {
                         src,
                         out,
                         OutputFormat.PBM,
-                        new ProcessOptions(300, OptionalInt.of(3), true));
+                        new ProcessOptions(OptionalInt.of(300), OptionalInt.of(3), true));
 
         long solid = 18L * 18L;
         assertEquals(solid - 1, result.blackPixelsBefore());
