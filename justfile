@@ -121,12 +121,13 @@ run-sample:
 
 # ----- format / lint (mirrors CI + the lefthook gates) -----
 
-# Auto-format everything in place.
+# Auto-format everything in place (spelling included).
 fmt:
     {{gradlew}} spotlessApply {{gradle_flags}}
     {{taplo}} fmt
     {{biome}} format --write .
     {{yamlfmt}} .
+    {{typos}} --write-changes
 
 # Verify formatting without writing (what CI checks).
 fmt-check:
@@ -135,17 +136,19 @@ fmt-check:
     {{biome}} format .
     {{yamlfmt}} --lint .
 
+# Spell-check and fix in place — the default. CI and the gates use typos-check.
 typos:
-    {{typos}}
-
-typos-fix:
     {{typos}} --write-changes
+
+# Spell-check without writing (what CI and the pre-push gate run).
+typos-check:
+    {{typos}}
 
 actionlint:
     {{actionlint}} .github/workflows/*.yml
 
 # Aggregated lint gate (mirrors CI's lint-peripheral plus Spotless).
-lint: fmt-check typos actionlint
+lint: fmt-check typos-check actionlint
 
 # Local CI replica: lint + the full build (which also runs the tests).
 ci: lint build
