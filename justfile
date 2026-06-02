@@ -46,17 +46,22 @@ bootstrap:
 doctor:
     @echo "==> despeckle doctor"
     @{{docker_run}} bash -c 'set -e; \
-        check() { printf "  %-12s " "$1"; out=$($2 2>&1 | head -1) && printf "ok    %s\n" "$out" || { printf "MISSING\n"; exit 1; }; }; \
-        check java       "java -version"; \
-        check typos      "typos --version"; \
-        check taplo      "taplo --version"; \
-        check biome      "biome --version"; \
-        check yamlfmt    "yamlfmt --version"; \
-        check actionlint "actionlint -version"; \
-        check lefthook   "lefthook version"; \
-        check just       "just --version"; \
-        check pdfimages  "pdfimages -v"; \
-        check img2pdf    "img2pdf --version"; \
+        check() { name="$1"; shift; printf "  %-12s " "$name"; \
+            if out=$("$@" 2>&1); then printf "ok    %s\n" "$(head -n1 <<<"$out")"; \
+            else printf "MISSING\n"; exit 1; fi; }; \
+        check java       java -version; \
+        check typos      typos --version; \
+        check taplo      taplo --version; \
+        check biome      biome --version; \
+        check yamlfmt    yamlfmt --version; \
+        check actionlint actionlint -version; \
+        check lefthook   lefthook version; \
+        check just       just --version; \
+        check pdfimages  pdfimages -v; \
+        check img2pdf    img2pdf --version; \
+        check qpdf       qpdf --version; \
+        check exiftool   exiftool -ver; \
+        check pikepdf    python3 -c "import pikepdf; print(pikepdf.__version__)"; \
     '
     @echo "==> doctor: ok"
 

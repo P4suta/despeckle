@@ -5,6 +5,8 @@
 #   - Temurin JDK 25 (FFM is final since 22; 25 is the current LTS).
 #   - Leptonica (liblept.so.5) — the despeckle core calls it through FFM.
 #   - poppler-utils (pdftoppm) + img2pdf — expand scan PDFs in / repack out.
+#   - PDF toolbox: qpdf, ghostscript, exiftool, and pikepdf (the finalize pass
+#     that sets the output to PDF 1.7 and inherits the source's metadata).
 #   - The language-agnostic quality tools the repo already uses
 #     (typos, taplo, biome, yamlfmt, actionlint, lefthook).
 #
@@ -30,10 +32,15 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
+        ghostscript \
         git \
         img2pdf \
+        libimage-exiftool-perl \
         libleptonica-dev \
         poppler-utils \
+        python3-pikepdf \
+        python3-pil \
+        qpdf \
         sudo \
         unzip \
     && rm -rf /var/lib/apt/lists/*
