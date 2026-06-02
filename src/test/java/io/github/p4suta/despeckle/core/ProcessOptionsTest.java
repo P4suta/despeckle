@@ -53,7 +53,7 @@ final class ProcessOptionsTest {
         assertFalse(defaults.dpi().isPresent());
         assertFalse(defaults.speckSizePx().isPresent());
         assertTrue(defaults.fillHoles());
-        assertFalse(defaults.isolatedDustEnabled(), "the isolated-dust pass is opt-in");
+        assertTrue(defaults.isolatedDustEnabled(), "the isolated-dust pass is on by default");
     }
 
     @Test

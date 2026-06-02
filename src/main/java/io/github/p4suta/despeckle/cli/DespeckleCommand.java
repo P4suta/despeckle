@@ -70,19 +70,26 @@ public final class DespeckleCommand implements Callable<Integer> {
             description = "Override the speck size in pixels (default: dpi/100).")
     private @Nullable Integer speckSize;
 
-    @Option(
-            names = "--fill-holes",
-            negatable = true,
-            description = "Fill pin-holes inside strokes (default: on).")
-    private boolean fillHoles = true;
+    // Hole-filling and the isolated-dust pass are both on by default; each takes
+    // an explicit opt-out. picocli's `negatable` inverts a default-true boolean
+    // (--no-x reads as on), so the on/off intent is spelled out with two plain
+    // flags instead, combined in call() as `optIn || !optOut`.
+    @Option(names = "--fill-holes", description = "Fill pin-holes inside strokes (on by default).")
+    private boolean fillHolesOptIn;
+
+    @Option(names = "--no-fill-holes", description = "Disable pin-hole filling.")
+    private boolean fillHolesOptOut;
 
     @Option(
             names = "--remove-isolated-dust",
             description =
-                    "Also remove isolated specks on clean background. Punctuation, dakuten and ruby"
-                        + " always hug a glyph, so they are kept; only specks out in the margins"
-                        + " are dropped.")
-    private boolean removeIsolatedDust;
+                    "Remove isolated specks on clean background (on by default). Punctuation,"
+                        + " dakuten and ruby always hug a glyph, so they are kept; only specks out"
+                        + " in the margins are dropped.")
+    private boolean removeIsolatedDustOptIn;
+
+    @Option(names = "--no-remove-isolated-dust", description = "Disable the isolated-dust pass.")
+    private boolean removeIsolatedDustOptOut;
 
     @Option(
             names = "--isolated-dust-size",
@@ -93,6 +100,8 @@ public final class DespeckleCommand implements Callable<Integer> {
 
     @Override
     public Integer call() throws Exception {
+        boolean fillHoles = fillHolesOptIn || !fillHolesOptOut;
+        boolean removeIsolatedDust = removeIsolatedDustOptIn || !removeIsolatedDustOptOut;
         ProcessOptions options =
                 new ProcessOptions(
                         dpi == null ? OptionalInt.empty() : OptionalInt.of(dpi),
