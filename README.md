@@ -71,10 +71,25 @@ despeckle <INPUT_DIR> <OUTPUT_DIR>
                            #   (default: each page's embedded resolution, else 300)
   [--speck-size <PX>]      # override the speck size directly
   [--[no-]fill-holes]      # fill pin-holes inside strokes (default: on)
+  [--remove-isolated-dust] # also drop isolated specks on clean background
+  [--isolated-dust-size <PX>] # max isolated-speck size; implies the above
+                           #   (default: dpi/40, ~15 px at 600 dpi)
 ```
 
 The report's overlay paints every removed pixel red over the original
 page, so you can confirm at a glance that only dust was taken.
+
+### Isolated-dust pass
+
+The base filter only drops specks tiny on *both* axes, so a medium speck
+that is still smaller than a glyph survives — visible on an otherwise
+clean margin. `--remove-isolated-dust` adds a second pass that removes
+those, but **only where they are isolated**: a speck within
+`isolated-dust-size + speck-size` pixels of real text is kept. Punctuation,
+dakuten and ruby always hug a glyph, so they fall inside that neighborhood
+and are never removed; only specks out on clean background are. This makes
+the pass safe to run far more aggressively than a global size bump, which
+would eat dakuten. It is opt-in; the overlay shows exactly what it took.
 
 ## Architecture
 

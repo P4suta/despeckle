@@ -42,7 +42,7 @@ final class MainE2eTest {
                         "*.{pbm,png,tiff,tif}",
                         2,
                         true,
-                        new ProcessOptions(OptionalInt.of(300), OptionalInt.of(3), true),
+                        ProcessOptions.of(OptionalInt.of(300), OptionalInt.of(3), true),
                         null);
         Runner.Summary summary = new Runner().run(config);
 

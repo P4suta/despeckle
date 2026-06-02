@@ -149,6 +149,22 @@ public final class Pix implements AutoCloseable {
         return wrap(Leptonica.pixInvert(requireHandle()), "pixInvert");
     }
 
+    /**
+     * Return a new {@code Pix} of this image's foreground minus {@code other}'s ({@code AND NOT}).
+     */
+    public Pix subtract(Pix other) {
+        return wrap(Leptonica.pixSubtract(requireHandle(), other.requireHandle()), "pixSubtract");
+    }
+
+    /**
+     * Return a new {@code Pix} grown by {@code radius} pixels in every direction (dilation by a
+     * {@code (2*radius+1)} square). A {@code radius} of 0 is the identity.
+     */
+    public Pix dilated(int radius) {
+        int size = 2 * radius + 1;
+        return wrap(Leptonica.pixDilateBrick(requireHandle(), size, size), "pixDilateBrick");
+    }
+
     /** Whether {@code other} is pixel-identical to this image. */
     public boolean pixelsEqual(Pix other) {
         MemorySegment h = requireHandle();

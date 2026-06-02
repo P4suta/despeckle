@@ -35,6 +35,16 @@ public final class Despeckler {
 
             Pix current = source.keepComponentsLargerThan(k);
             try {
+                if (options.isolatedDustEnabled()) {
+                    Pix deisolated =
+                            removeIsolatedDust(
+                                    current,
+                                    options.isolatedDustSize(imageDpi),
+                                    options.isolatedDustProximity(imageDpi));
+                    current.close();
+                    current = deisolated;
+                }
+
                 if (options.fillHoles()) {
                     Pix filled = fillHoles(current, k);
                     current.close();
@@ -64,6 +74,22 @@ public final class Despeckler {
         try (Pix inverted = pix.inverted();
                 Pix holesDropped = inverted.keepComponentsLargerThan(k)) {
             return holesDropped.inverted();
+        }
+    }
+
+    /**
+     * Remove specks that are both small enough to be dust (no larger than {@code maxSize} in either
+     * axis) and isolated (no kept component within {@code proximity} pixels). Real text is large on
+     * at least one axis, so it forms the protected set; punctuation, dakuten and ruby are small but
+     * always hug a glyph, so they fall inside that set's neighborhood and are spared. Only specks
+     * out on clean background are dropped.
+     */
+    private static Pix removeIsolatedDust(Pix base, int maxSize, int proximity) {
+        try (Pix text = base.keepComponentsLargerThan(maxSize);
+                Pix candidates = base.subtract(text);
+                Pix textNeighborhood = text.dilated(proximity);
+                Pix isolated = candidates.subtract(textNeighborhood)) {
+            return base.subtract(isolated);
         }
     }
 }

@@ -31,7 +31,7 @@ final class DespecklerTest {
                         src,
                         out,
                         OutputFormat.PBM,
-                        new ProcessOptions(OptionalInt.of(300), OptionalInt.of(3), false));
+                        ProcessOptions.of(OptionalInt.of(300), OptionalInt.of(3), false));
 
         // Three specks gone, glyph kept => 3 components removed.
         assertEquals(3, result.componentsRemoved());
@@ -54,7 +54,7 @@ final class DespecklerTest {
                         src,
                         out,
                         OutputFormat.PBM,
-                        new ProcessOptions(OptionalInt.of(300), OptionalInt.of(3), false));
+                        ProcessOptions.of(OptionalInt.of(300), OptionalInt.of(3), false));
 
         assertEquals(0, result.componentsRemoved());
         assertEquals(0.0, result.removedBlackPixelRatio());
@@ -78,7 +78,7 @@ final class DespecklerTest {
                 src,
                 out,
                 OutputFormat.PNG,
-                new ProcessOptions(OptionalInt.of(600), OptionalInt.empty(), false));
+                ProcessOptions.of(OptionalInt.of(600), OptionalInt.empty(), false));
 
         try (Pix cleaned = Pix.read(out)) {
             assertEquals(600, cleaned.resolution(), "the honored resolution is stamped on output");
@@ -102,6 +102,52 @@ final class DespecklerTest {
     }
 
     @Test
+    void removesIsolatedSpeckButKeepsTheNeighborOfAGlyph(@TempDir Path dir) throws Exception {
+        // A glyph, an 8x8 speck hugging it (a stand-in for a dakuten), and an 8x8 speck off on
+        // clean background. Both specks clear the base speck size, so only the isolated pass can
+        // tell them apart: the neighbor is kept, the isolated one is dropped.
+        Path src = dir.resolve("page.pbm");
+        boolean[][] img = TestImages.blank(100, 60);
+        TestImages.fillRect(img, 0, 10, 29, 49); // 30x40 glyph (real text)
+        TestImages.fillRect(img, 32, 12, 39, 19); // 8x8 speck, 3 px from the glyph -> kept
+        TestImages.fillRect(img, 88, 2, 95, 9); // 8x8 speck, far on clean background -> removed
+        TestImages.writePbm(src, img);
+
+        // Without the pass, the base filter (speck size 3) keeps every 8x8 block.
+        Path plain = dir.resolve("plain.pbm");
+        ProcessResult before =
+                despeckler.process(
+                        src,
+                        plain,
+                        OutputFormat.PBM,
+                        ProcessOptions.of(OptionalInt.empty(), OptionalInt.of(3), false));
+        assertEquals(0, before.componentsRemoved(), "base filter keeps both 8x8 specks");
+
+        // With the pass on, the isolated speck goes and the glyph-hugging one stays.
+        Path out = dir.resolve("page-out.pbm");
+        ProcessResult result =
+                despeckler.process(
+                        src,
+                        out,
+                        OutputFormat.PBM,
+                        new ProcessOptions(
+                                OptionalInt.empty(),
+                                OptionalInt.of(3),
+                                false,
+                                true,
+                                OptionalInt.of(10)));
+
+        assertEquals(1, result.componentsRemoved(), "only the isolated speck is removed");
+        try (Pix cleaned = Pix.read(out)) {
+            assertEquals(2, cleaned.connectedComponents(), "glyph and its neighbor survive");
+            assertEquals(
+                    30L * 40L + 8L * 8L,
+                    cleaned.blackPixels(),
+                    "the glyph and the hugging speck are intact to the pixel");
+        }
+    }
+
+    @Test
     void fillHolesClosesPinHoleInsideStroke(@TempDir Path dir) throws Exception {
         // A solid block with a single white pin-hole punched in the middle.
         Path src = dir.resolve("holed.pbm");
@@ -116,7 +162,7 @@ final class DespecklerTest {
                         src,
                         out,
                         OutputFormat.PBM,
-                        new ProcessOptions(OptionalInt.of(300), OptionalInt.of(3), true));
+                        ProcessOptions.of(OptionalInt.of(300), OptionalInt.of(3), true));
 
         long solid = 18L * 18L;
         assertEquals(solid - 1, result.blackPixelsBefore());

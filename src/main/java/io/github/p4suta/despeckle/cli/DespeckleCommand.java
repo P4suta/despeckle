@@ -76,13 +76,32 @@ public final class DespeckleCommand implements Callable<Integer> {
             description = "Fill pin-holes inside strokes (default: on).")
     private boolean fillHoles = true;
 
+    @Option(
+            names = "--remove-isolated-dust",
+            description =
+                    "Also remove isolated specks on clean background. Punctuation, dakuten and ruby"
+                        + " always hug a glyph, so they are kept; only specks out in the margins"
+                        + " are dropped.")
+    private boolean removeIsolatedDust;
+
+    @Option(
+            names = "--isolated-dust-size",
+            description =
+                    "Max size (px) of an isolated speck to remove; implies"
+                            + " --remove-isolated-dust (default: dpi/40).")
+    private @Nullable Integer isolatedDustSize;
+
     @Override
     public Integer call() throws Exception {
         ProcessOptions options =
                 new ProcessOptions(
                         dpi == null ? OptionalInt.empty() : OptionalInt.of(dpi),
                         speckSize == null ? OptionalInt.empty() : OptionalInt.of(speckSize),
-                        fillHoles);
+                        fillHoles,
+                        removeIsolatedDust,
+                        isolatedDustSize == null
+                                ? OptionalInt.empty()
+                                : OptionalInt.of(isolatedDustSize));
         Runner.Config config =
                 new Runner.Config(
                         inputDir,
