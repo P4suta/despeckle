@@ -1,0 +1,32 @@
+# despeckle tool-freshness check.
+#
+# Dependabot tracks the Docker base image and the SHA-pinned Actions, but not the
+# Dockerfile's ARG-pinned tool downloads (just, lefthook, typos, taplo, biome,
+# yamlfmt, actionlint, jbig2enc). This fills that gap: weekly, plus on demand, it
+# compares each pin with the latest upstream release and goes red when one is
+# behind — so stale pins surface on their own instead of rotting silently.
+#
+# Same probe as `just tools-latest`; the script is standard-library Python, so it
+# runs on a bare runner without the dev image.
+
+name: tool-freshness
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: pinned tools vs latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: compare pins with latest upstream releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/check-tool-versions.py
