@@ -20,6 +20,10 @@ ARG USER_GID=1000
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Fail a RUN if any stage of a pipe fails (e.g. curl | tar), not just the last
+# one. Standard Docker hardening (hadolint DL4006); the temurin base ships bash.
+SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
+
 # System libraries + scan-pipeline tools. libleptonica-dev pulls in the
 # runtime liblept.so.5 that FFM loads at run time.
 RUN apt-get update \
@@ -60,8 +64,10 @@ RUN curl -fsSL "https://github.com/tamasfe/taplo/releases/download/${TAPLO_VERSI
     | gunzip > /usr/local/bin/taplo \
     && chmod +x /usr/local/bin/taplo
 
-# biome (JSON formatter) — single binary.
-RUN curl -fsSL "https://github.com/biomejs/biome/releases/latest/download/biome-linux-x64" \
+# biome (JSON formatter) — single binary. Pinned like every other tool here so
+# image rebuilds are reproducible; the v2 release tag is `@biomejs/biome@<ver>`.
+ARG BIOME_VERSION=2.4.16
+RUN curl -fsSL "https://github.com/biomejs/biome/releases/download/@biomejs/biome@${BIOME_VERSION}/biome-linux-x64" \
         -o /usr/local/bin/biome \
     && chmod +x /usr/local/bin/biome
 
