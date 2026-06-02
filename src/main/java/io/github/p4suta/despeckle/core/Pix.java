@@ -165,6 +165,27 @@ public final class Pix implements AutoCloseable {
         return wrap(Leptonica.pixDilateBrick(requireHandle(), size, size), "pixDilateBrick");
     }
 
+    /**
+     * Return a new {@code Pix} opened (eroded then dilated) by a {@code (2*radius+1)} square — i.e.
+     * foreground thinner than the brick in either axis is erased, leaving only the solid parts.
+     */
+    public Pix opened(int radius) {
+        int size = 2 * radius + 1;
+        return wrap(Leptonica.pixOpenBrick(requireHandle(), size, size), "pixOpenBrick");
+    }
+
+    /**
+     * Return a new {@code Pix} of the intersection of this image's foreground with {@code other}'s.
+     */
+    public Pix and(Pix other) {
+        return wrap(Leptonica.pixAnd(requireHandle(), other.requireHandle()), "pixAnd");
+    }
+
+    /** Return a new {@code Pix} of the union of this image's foreground with {@code other}'s. */
+    public Pix or(Pix other) {
+        return wrap(Leptonica.pixOr(requireHandle(), other.requireHandle()), "pixOr");
+    }
+
     /** Whether {@code other} is pixel-identical to this image. */
     public boolean pixelsEqual(Pix other) {
         MemorySegment h = requireHandle();

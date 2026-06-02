@@ -160,6 +160,14 @@ final class Leptonica {
             handle(
                     "pixDilateBrick",
                     FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS, JAVA_INT, JAVA_INT));
+    private static final MethodHandle PIX_OPEN_BRICK =
+            handle(
+                    "pixOpenBrick",
+                    FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS, JAVA_INT, JAVA_INT));
+    private static final MethodHandle PIX_AND =
+            handle("pixAnd", FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS, ADDRESS));
+    private static final MethodHandle PIX_OR =
+            handle("pixOr", FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS, ADDRESS));
     private static final MethodHandle PIX_EQUAL =
             handle("pixEqual", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS));
     private static final MethodHandle PIX_COUNT_CONN_COMP =
@@ -278,6 +286,36 @@ final class Leptonica {
             return (MemorySegment) PIX_DILATE_BRICK.invoke(MemorySegment.NULL, src, hsize, vsize);
         } catch (Throwable t) {
             throw sneaky("pixDilateBrick", t);
+        }
+    }
+
+    /**
+     * Open (erode then dilate) {@code src} by a {@code hsize x vsize} brick into a fresh {@code
+     * PIX}.
+     */
+    static MemorySegment pixOpenBrick(MemorySegment src, int hsize, int vsize) {
+        try {
+            return (MemorySegment) PIX_OPEN_BRICK.invoke(MemorySegment.NULL, src, hsize, vsize);
+        } catch (Throwable t) {
+            throw sneaky("pixOpenBrick", t);
+        }
+    }
+
+    /** {@code s1 AND s2} into a fresh {@code PIX} (the {@code pixd == NULL} path). */
+    static MemorySegment pixAnd(MemorySegment s1, MemorySegment s2) {
+        try {
+            return (MemorySegment) PIX_AND.invoke(MemorySegment.NULL, s1, s2);
+        } catch (Throwable t) {
+            throw sneaky("pixAnd", t);
+        }
+    }
+
+    /** {@code s1 OR s2} into a fresh {@code PIX} (the {@code pixd == NULL} path). */
+    static MemorySegment pixOr(MemorySegment s1, MemorySegment s2) {
+        try {
+            return (MemorySegment) PIX_OR.invoke(MemorySegment.NULL, s1, s2);
+        } catch (Throwable t) {
+            throw sneaky("pixOr", t);
         }
     }
 
