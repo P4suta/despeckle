@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pack a directory of cleaned bitonal pages into a lossless-JBIG2 PDF 1.7.
+"""Pack a directory of cleaned bitonal pages into a lossless-JBIG2 PDF.
 
 JBIG2 packs bitonal text far tighter than the CCITT G4 img2pdf would use, but
 its dramatic gains come from *lossy* symbol substitution. despeckle is a
@@ -70,9 +70,9 @@ def main():
         page.Contents = pdf.make_stream(f"q {w_pt} 0 0 {h_pt} 0 0 cm /Im0 Do Q".encode())
         page.Resources = Dictionary(XObject=Dictionary(Im0=image))
 
-    pdfmeta.save_pdf17(pdf, out, source)
-    extra = f", metadata from {source}" if source else ""
-    print(f"wrote {out}: {len(pages)} page(s), lossless JBIG2, PDF 1.7{extra}")
+    pdfmeta.save_like_source(pdf, out, source)
+    extra = f", metadata + version from {source}" if source else ""
+    print(f"wrote {out}: {len(pages)} page(s), lossless JBIG2{extra}")
 
 
 if __name__ == "__main__":

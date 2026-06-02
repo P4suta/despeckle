@@ -55,9 +55,13 @@ public record ProcessOptions(
         return new ProcessOptions(dpi, speckSizePx, fillHoles, false, OptionalInt.empty());
     }
 
-    /** Default options: auto-detect resolution, derived speck size, hole-filling on. */
+    /**
+     * Default options: auto-detect resolution, derived speck size, hole-filling on, and the
+     * isolated-dust pass on (it only clears genuinely isolated specks, never typography).
+     */
     public static ProcessOptions defaults() {
-        return of(OptionalInt.empty(), OptionalInt.empty(), true);
+        return new ProcessOptions(
+                OptionalInt.empty(), OptionalInt.empty(), true, true, OptionalInt.empty());
     }
 
     /**

@@ -17,8 +17,9 @@ DPI-aware policy, the directory/parallel driver, and the inspection report.
 
 - **Image in / image out, never PDF.** Pair with `pdfimages` on the way in
   and, on the way out, the `just to-pdf` recipe — which repacks the cleaned
-  pages as **lossless JBIG2** (smaller than the source scan, bit-exact),
-  emits PDF 1.7, and inherits the original's metadata. All tooling is
+  pages as **lossless JBIG2** (smaller than the source scan, bit-exact) and,
+  since despeckle is image-in/image-out, mirrors the source PDF: same
+  metadata, same PDF version, linearized for Fast Web View. All tooling is
   bundled in the dev image.
 - **Dust removal only.** Deskew, margin-cropping and contrast are out of
   scope.
@@ -31,9 +32,16 @@ DPI-aware policy, the directory/parallel driver, and the inspection report.
 
 ```
 read (Leptonica) → keep components larger than k, 8-connected
-                 → optionally fill pin-holes (invert → same filter → invert)
+                 → (optionally) drop isolated specks on clean background
+                 → (optionally) fill pin-holes that sit in solid ink
                  → write (Leptonica)
 ```
+
+Hole-filling is thickness-aware: a white pin-hole is closed only when the ink
+ringing it is solid (survives an opening by ~half the speck size). The fine
+gaps inside small or complex glyphs are ringed by *thin* strokes, so they are
+left alone — small running heads like 「第二省察」 stay crisp instead of
+filling in.
 
 `k` (the speck size) defaults to `dpi / 100` — about 3 px at 300 dpi, 6 px
 at 600. The resolution is read from each page's own tag when `--dpi` is
@@ -58,7 +66,7 @@ Given a real scan PDF:
 ```sh
 just extract mybook.pdf scans/mybook          # pdftoppm -mono -r 300
 just run scans/mybook out/mybook --report report/mybook --force
-just to-pdf out/mybook out/mybook.pdf mybook.pdf  # PDF 1.7, inherits source metadata
+just to-pdf out/mybook out/mybook.pdf mybook.pdf  # JBIG2; mirrors source metadata + version
 ```
 
 ## CLI
@@ -74,7 +82,7 @@ despeckle <INPUT_DIR> <OUTPUT_DIR>
                            #   (default: each page's embedded resolution, else 300)
   [--speck-size <PX>]      # override the speck size directly
   [--[no-]fill-holes]      # fill pin-holes inside strokes (default: on)
-  [--remove-isolated-dust] # also drop isolated specks on clean background
+  [--[no-]remove-isolated-dust] # drop isolated specks on clean bg (default: on)
   [--isolated-dust-size <PX>] # max isolated-speck size; implies the above
                            #   (default: dpi/40, ~15 px at 600 dpi)
 ```
@@ -86,13 +94,14 @@ page, so you can confirm at a glance that only dust was taken.
 
 The base filter only drops specks tiny on *both* axes, so a medium speck
 that is still smaller than a glyph survives — visible on an otherwise
-clean margin. `--remove-isolated-dust` adds a second pass that removes
-those, but **only where they are isolated**: a speck within
-`isolated-dust-size + speck-size` pixels of real text is kept. Punctuation,
-dakuten and ruby always hug a glyph, so they fall inside that neighborhood
-and are never removed; only specks out on clean background are. This makes
-the pass safe to run far more aggressively than a global size bump, which
-would eat dakuten. It is opt-in; the overlay shows exactly what it took.
+clean margin. A second pass (on by default; disable with
+`--no-remove-isolated-dust`) removes those, but **only where they are
+isolated**: a speck within `isolated-dust-size + speck-size` pixels of real
+text is kept. Punctuation, dakuten and ruby always hug a glyph, so they fall
+inside that neighborhood and are never removed; only specks out on clean
+background are. This makes the pass safe to run far more aggressively than a
+global size bump, which would eat dakuten. The overlay shows exactly what it
+took.
 
 ## Architecture
 

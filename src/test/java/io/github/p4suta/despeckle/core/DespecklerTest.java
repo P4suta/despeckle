@@ -170,4 +170,34 @@ final class DespecklerTest {
             assertEquals(solid, cleaned.blackPixels(), "the pin-hole is filled back to solid");
         }
     }
+
+    @Test
+    void fillHolesSparesTheGapInsideAThinWalledGlyph(@TempDir Path dir) throws Exception {
+        // A 9x9 box with 2 px walls around a 5x5 white interior — a stand-in for a small glyph
+        // whose inner gap is no larger than the speck size. A plain "fill every small hole" pass
+        // would close it (crushing the glyph); the thickness-aware pass leaves it, because the
+        // surrounding walls are thinner than the gap.
+        Path src = dir.resolve("box.pbm");
+        Path out = dir.resolve("box-out.pbm");
+        boolean[][] img = TestImages.blank(24, 24);
+        TestImages.fillRect(img, 8, 8, 16, 16); // 9x9 block
+        for (int y = 10; y <= 14; y++) {
+            for (int x = 10; x <= 14; x++) {
+                img[y][x] = false; // 5x5 interior gap, leaving 2 px walls
+            }
+        }
+        TestImages.writePbm(src, img);
+
+        despeckler.process(
+                src,
+                out,
+                OutputFormat.PBM,
+                ProcessOptions.of(OptionalInt.of(600), OptionalInt.of(6), true));
+
+        long ring = 9L * 9L - 5L * 5L;
+        try (Pix cleaned = Pix.read(out)) {
+            assertEquals(
+                    ring, cleaned.blackPixels(), "the thin-walled gap is preserved, not filled");
+        }
+    }
 }

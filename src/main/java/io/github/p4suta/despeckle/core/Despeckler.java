@@ -46,7 +46,11 @@ public final class Despeckler {
                 }
 
                 if (options.fillHoles()) {
-                    Pix filled = fillHoles(current, k);
+                    // The thin-stroke threshold: only holes ringed by black thicker than this are
+                    // treated as pin-holes. Half the speck size (~3 px at 600 dpi) keeps body
+                    // strokes solid while sparing the fine gaps inside small or complex glyphs.
+                    int strokeThickness = Math.max(1, Math.round(k / 2.0f));
+                    Pix filled = fillHoles(current, k, strokeThickness);
                     current.close();
                     current = filled;
                 }
@@ -66,14 +70,39 @@ public final class Despeckler {
     }
 
     /**
-     * Fill isolated white pin-holes inside black strokes — the photographic negative of
-     * despeckling. In the inverted image a pin-hole is a tiny isolated foreground component, so the
-     * same conservative size filter that drops dust drops the hole; inverting back paints it solid.
+     * Fill white pin-holes inside black strokes, but only where the surrounding ink is solid. A
+     * pin-hole is a small white defect ringed by thick black; the fine white gaps inside small or
+     * complex glyphs look the same to a size filter but are ringed by <em>thin</em> strokes, so a
+     * plain "fill every small hole" pass crushes them. Opening the page by {@code strokeThickness}
+     * keeps only the solid ink; a hole is filled only when it still sits inside that solid mask.
+     *
+     * @param pix the page
+     * @param k the speck size — caps a candidate hole at {@code k} px in either axis
+     * @param strokeThickness ink thinner than this is not "solid", so its holes are left alone
      */
-    private static Pix fillHoles(Pix pix, int k) {
+    private static Pix fillHoles(Pix pix, int k, int strokeThickness) {
+        try (Pix holes = smallHoles(pix, k);
+                Pix solid = solidInk(pix, k, strokeThickness);
+                Pix fillable = holes.and(solid)) {
+            return pix.or(fillable);
+        }
+    }
+
+    /** The white holes of {@code pix} no larger than {@code k} px in either axis. */
+    private static Pix smallHoles(Pix pix, int k) {
         try (Pix inverted = pix.inverted();
-                Pix holesDropped = inverted.keepComponentsLargerThan(k)) {
-            return holesDropped.inverted();
+                Pix largerWhite = inverted.keepComponentsLargerThan(k)) {
+            return inverted.subtract(largerWhite);
+        }
+    }
+
+    /**
+     * {@code pix} reduced to ink thicker than {@code strokeThickness}, with its pin-holes filled.
+     */
+    private static Pix solidInk(Pix pix, int k, int strokeThickness) {
+        try (Pix thick = pix.opened(strokeThickness);
+                Pix thickHoles = smallHoles(thick, k)) {
+            return thick.or(thickHoles);
         }
     }
 
