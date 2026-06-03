@@ -1,14 +1,19 @@
-import com.github.spotbugs.snom.Confidence
-import com.github.spotbugs.snom.Effort
-import net.ltgt.gradle.errorprone.CheckSeverity
-import net.ltgt.gradle.errorprone.errorprone
-
 plugins {
-    application
-    alias(libs.plugins.spotless)
-    alias(libs.plugins.errorprone)
-    alias(libs.plugins.spotbugs)
+    base
     alias(libs.plugins.rewrite)
+    // Whole-build coverage: merges every module's JaCoCo data into one cross-module report
+    // (`./gradlew testCodeCoverageReport` / `just coverage`). Unlike the per-module floors, this
+    // view credits a class for coverage from ANY module's tests — so the adapters exercised only by
+    // :app's end-to-end pipeline tests show as covered here, even though :infrastructure's own
+    // isolated report cannot see them.
+    `jacoco-report-aggregation`
+    // Load Spotless/Error Prone/SpotBugs once at the root scope (apply false) so the convention
+    // plugins that apply them across the sibling modules all share a single plugin classloader.
+    // Without this, Spotless's shared SpotlessTaskService is loaded per-project and Gradle fails
+    // with "Cannot set the value of task ':<m>:spotlessJava' property 'taskService'".
+    alias(libs.plugins.spotless) apply false
+    alias(libs.plugins.errorprone) apply false
+    alias(libs.plugins.spotbugs) apply false
 }
 
 group = "io.github.p4suta"
@@ -18,35 +23,7 @@ repositories {
     mavenCentral()
 }
 
-java {
-    // FFM is final since JDK 22; 25 is the current LTS. If Error Prone ever
-    // lags a JDK, the floor that still builds is 22 (FFM is preview on 21).
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(25)
-    }
-}
-
 dependencies {
-    implementation(libs.commons.cli)
-    implementation(libs.slf4j.api)
-    runtimeOnly(libs.slf4j.simple)
-
-    // PDFBox builds the cleaned lossless-JBIG2 output PDF in `despeckle pipeline`.
-    implementation(libs.pdfbox)
-    implementation(libs.xmpbox)
-
-    // JSpecify @Nullable: the vocabulary NullAway reads to learn what may be null.
-    implementation(libs.jspecify)
-
-    errorprone(libs.errorprone.core)
-    // NullAway runs as an Error Prone plugin (same `errorprone` configuration).
-    errorprone(libs.nullaway)
-
-    testImplementation(platform(libs.junit.bom))
-    testImplementation(libs.junit.jupiter)
-    testImplementation(libs.archunit.junit5)
-    testRuntimeOnly(libs.junit.platform.launcher)
-
     // OpenRewrite recipe modules. Only the rewriteRun/rewriteDryRun tasks pull
     // these in; they are not part of the `build` graph, so a recipe never blocks
     // a commit.
@@ -58,103 +35,25 @@ dependencies {
     // Not in the recipe BOM, so version-pinned in the catalog; the BOM platform
     // above still aligns its transitive rewrite-core.
     rewrite(libs.rewrite.java.security)
+
+    // Every production module feeds the aggregated coverage report.
+    jacocoAggregation(project(":domain"))
+    jacocoAggregation(project(":port"))
+    jacocoAggregation(project(":application"))
+    jacocoAggregation(project(":infrastructure"))
+    jacocoAggregation(project(":observability"))
+    jacocoAggregation(project(":app"))
 }
 
-// The one place native access is granted; reused by run, test and any JavaExec.
-val nativeAccessArgs = listOf("--enable-native-access=ALL-UNNAMED")
-
-application {
-    mainClass = "io.github.p4suta.despeckle.Main"
-    applicationDefaultJvmArgs = nativeAccessArgs
-}
-
-tasks.withType<JavaCompile>().configureEach {
-    options.encoding = "UTF-8"
-    // Pin the documented JDK 25 API surface.
-    options.release = 25
-    // Warnings are errors. We exclude only the "options" category: the
-    // "system modules path not set" note is an environmental artifact of
-    // toolchain compilation, not a code-quality signal. Every code warning
-    // (deprecation, unchecked, removal, ...) still fails the build.
-    options.compilerArgs.addAll(listOf("-Xlint:all,-options", "-Werror"))
-    // NullAway: a missing null check inside our own package is a build error.
-    // Maximally strict — full JSpecify semantics (generics, type-use positions;
-    // the source is @NullMarked per package-info), restrictive third-party
-    // annotations honored, Optional/OptionalInt emptiness flow-checked, and every
-    // override re-checked against its supertype. CheckContracts/AssertsEnabled are
-    // pre-enabled (the code has no @Contract or assert yet, so they verify nothing
-    // today) so future contracts/asserts are honored without a config change.
-    options.errorprone {
-        disableWarningsInGeneratedCode = true
-        check("NullAway", CheckSeverity.ERROR)
-        // AnnotatedPackages is the required baseline (NullAway demands exactly one
-        // of AnnotatedPackages or OnlyNullMarked) and already marks every current
-        // and future sub-package. The @NullMarked package-info files are kept as
-        // in-source / IDE documentation and to stay honest if a package is ever
-        // moved out from under this prefix.
-        option("NullAway:AnnotatedPackages", "io.github.p4suta.despeckle")
-        option("NullAway:JSpecifyMode", "true")
-        option("NullAway:AcknowledgeRestrictiveAnnotations", "true")
-        option("NullAway:CheckOptionalEmptiness", "true")
-        // The codebase models nullable numerics as OptionalInt, which the emptiness
-        // check ignores by default; name the primitive optionals so getAsInt() is
-        // flow-checked (e.g. guarded by isPresent()) like java.util.Optional.get().
-        option(
-            "NullAway:CheckOptionalEmptinessCustomClasses",
-            "java.util.OptionalInt,java.util.OptionalLong,java.util.OptionalDouble",
-        )
-        option("NullAway:CheckContracts", "true")
-        option("NullAway:ExhaustiveOverride", "true")
-        option("NullAway:AssertsEnabled", "true")
+// Wire the `testCodeCoverageReport` task to the `test` suite of every aggregated module; it
+// produces build/reports/jacoco/testCodeCoverageReport/ (HTML to browse + XML for tooling such
+// as scripts/CoverageSummary.java).
+reporting {
+    reports {
+        val testCodeCoverageReport by creating(JacocoCoverageReport::class) {
+            testSuiteName = "test"
+        }
     }
-}
-
-// NullAway guards the tests too: they are @NullMarked, and the strict options
-// above (JSpecifyMode, restrictive annotations, ...) are inherited from the
-// shared JavaCompile block. HandleTestAssertionLibraries lets JUnit/Hamcrest/
-// AssertJ assertions establish non-null facts when a test relies on them.
-tasks.named<JavaCompile>("compileTestJava") {
-    options.errorprone {
-        check("NullAway", CheckSeverity.ERROR)
-        option("NullAway:HandleTestAssertionLibraries", "true")
-    }
-}
-
-tasks.test {
-    useJUnitPlatform()
-    jvmArgs(nativeAccessArgs)
-}
-
-tasks.withType<JavaExec>().configureEach {
-    jvmArgs(nativeAccessArgs)
-}
-
-spotless {
-    java {
-        target("src/**/*.java")
-        // AOSP style = 4-space indent, 100-column, matching .editorconfig.
-        googleJavaFormat(
-            libs.versions.google.java.format
-                .get(),
-        ).aosp().reflowLongStrings()
-        removeUnusedImports()
-        trimTrailingWhitespace()
-        endWithNewline()
-    }
-    kotlinGradle {
-        target("*.gradle.kts")
-        ktlint()
-    }
-}
-
-spotbugs {
-    effort = Effort.MAX
-    reportLevel = Confidence.MEDIUM
-    excludeFilter = file("config/spotbugs/exclude.xml")
-}
-
-tasks.withType<com.github.spotbugs.snom.SpotBugsTask>().configureEach {
-    reports.create("html") { required = true }
 }
 
 // OpenRewrite: a curated pass defined declaratively in rewrite.yml (auto-discovered

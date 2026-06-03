@@ -40,8 +40,8 @@ read (Leptonica) → keep components larger than k, 8-connected
 Hole-filling is thickness-aware: a white pin-hole is closed only when the ink
 ringing it is solid (survives an opening by ~half the speck size). The fine
 gaps inside small or complex glyphs are ringed by *thin* strokes, so they are
-left alone — small running heads like 「第二省察」 stay crisp instead of
-filling in.
+left alone — small running heads and the fine strokes inside complex kanji
+stay crisp instead of filling in.
 
 `k` (the speck size) defaults to `dpi / 100` — about 3 px at 300 dpi, 6 px
 at 600. The resolution is read from each page's own tag when `--dpi` is
@@ -105,17 +105,24 @@ took.
 
 ## Architecture
 
-A single Gradle module under `io.github.p4suta.despeckle`:
+Six Gradle modules under `io.github.p4suta.despeckle`, a hexagonal (ports &
+adapters) graph in which a layer violation does not compile — the boundary is
+the *absence* of a `project()` dependency, not a runtime check:
 
-| package   | role                                                          |
-| --------- | ------------------------------------------------------------- |
-| `core`    | `Leptonica` (the one FFM binding island), `Pix` (RAII handle), `Despeckler` (the pipeline) |
-| `runner`  | directory walk, fixed thread pool, over-removal guardrail     |
-| `report`  | before/overlay/after ONGs + `index.html`                      |
-| `cli`     | Apache Commons CLI front end                                  |
+| module            | role                                                                        |
+| ----------------- | --------------------------------------------------------------------------- |
+| `:domain`         | pure value types + logic: `ProcessOptions`/`ProcessResult`, `OutputFormat`, the listing/naming parsers |
+| `:port`           | the adapter interfaces — `PageCleaner`, `Reporter`, `PdfImageExtractor`, `Jbig2Assembler`, `PdfLinearizer` |
+| `:application`    | orchestration over the ports: `DespeckleService`, `PdfPipelineService`, `PdfBatchService`, `Jbig2PackService` |
+| `:infrastructure` | the adapters: `Leptonica` (FFM island) + `Pix`, PDFBox + `jbig2`/`qpdf`, the WebP `HtmlReporter` |
+| `:observability`  | exit-code mapping + the fatal uncaught handler                              |
+| `:app`            | Apache Commons CLI front end, `Main`, the composition root, distribution, the ArchUnit suite |
 
-`core` performs no directory or thread work, so a future GUI can reuse it
-unchanged.
+`:domain`/`:port`/`:application` never see `:infrastructure`, so PDFBox, the FFM
+binding and AWT are confined to `:infrastructure` (and Commons CLI to `:app`) by
+construction — a future GUI can depend on `:application` plus the ports
+unchanged. Shared build logic lives in the `build-logic` included build (three
+convention plugins); versions stay in `gradle/libs.versions.toml`.
 
 ## Requirements
 
@@ -134,12 +141,22 @@ unchanged.
 - **Error Prone** on every compile, `-Werror`
 - **NullAway** (JSpecify, `@NullMarked`) at ERROR on both main and test sources
 - **SpotBugs** at max effort
-- **ArchUnit** — the layered onion (so `core` stays GUI-reusable), FFM /
-  `MethodHandle` confinement, filesystem and standard-stream limits, no package
-  cycles, and JSpecify-only nullness annotations
+- **ArchUnit** (in `:app`, whose test classpath sees every module) — the
+  boundaries the module graph cannot: FFM / `MethodHandle` confinement to the
+  Leptonica island, `domain`/`port` filesystem-freedom, standard streams only in
+  the CLI front ends, no package cycles, and JSpecify-only nullness annotations
+- **JaCoCo** — per-module coverage floors (strict on `:domain`, looser on the
+  adapter-heavy `:infrastructure`); **PIT** mutation testing on `:domain`
 - **JUnit** — FFM smoke, pixel-identical round-trip, the polarity /
   connectivity pin (a tall thin stroke is kept, a 2×2 speck is dropped),
-  hole-filling, a directory end-to-end run, and the ArchUnit architecture suite.
+  hole-filling, a directory end-to-end run, fake-port service tests, and the
+  ArchUnit architecture suite.
+
+`just coverage` (`./gradlew testCodeCoverageReport` + `scripts/CoverageSummary.java`)
+merges every module's JaCoCo data into one cross-module report and prints a
+per-module / per-class summary — the aggregated view credits a class for coverage
+from any module's tests, so the adapters that only the end-to-end tests exercise
+show as covered there.
 
 `./gradlew rewriteRun` (or `just rewrite` / `just rewrite-check`) runs an
 **OpenRewrite** advisory pass — curated static-analysis, JUnit 5, SLF4J and

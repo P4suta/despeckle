@@ -28,7 +28,7 @@ gradle_flags := "--no-daemon --console=plain -Dorg.gradle.java.installations.aut
 # The installed app launcher. `just run` execs this instead of `gradlew run`, skipping
 # ~6s of Gradle startup per book. `just assemble` (re)builds it via installDist, so
 # rebuild after editing code to keep the launcher in step with the sources.
-launcher := "build/install/despeckle/bin/despeckle"
+launcher := "app/build/install/despeckle/bin/despeckle"
 
 default:
     @just --list
@@ -104,12 +104,22 @@ build:
 # skipping checks (fast inner loop). installDist transitively assembles the jar, then
 # `just run` execs the launcher with no Gradle startup. Re-run after editing code.
 assemble:
-    {{gradlew}} installDist {{gradle_flags}}
+    {{gradlew}} :app:installDist {{gradle_flags}}
 
 # JUnit suite only.
 test:
     @echo "==> ./gradlew test"
     {{gradlew}} test {{gradle_flags}}
+
+# Whole-build coverage: run every module's tests, merge them into one cross-module JaCoCo report
+# (build/reports/jacoco/testCodeCoverageReport/index.html), then print a per-module / per-class
+# summary table. The aggregated view credits each class for coverage from ANY module's tests, so
+# the adapters that only :app's end-to-end tests exercise still show as covered. Pass --min N to
+# fail below a total line%, e.g. `just coverage --min 80`.
+coverage *args:
+    @echo "==> ./gradlew testCodeCoverageReport"
+    {{gradlew}} testCodeCoverageReport {{gradle_flags}}
+    {{sh}} 'java scripts/CoverageSummary.java {{args}}'
 
 clean:
     {{gradlew}} clean {{gradle_flags}}
@@ -145,8 +155,17 @@ pipeline input output *args:
 
 # Smoke check: process the bundled samples/ into artifacts/ with an HTML report.
 run-sample:
-    {{gradlew}} run {{gradle_flags}} \
+    {{gradlew}} :app:run {{gradle_flags}} \
         --args="samples artifacts/sample-out --report artifacts/sample-report --force"
+
+# Build the jpackage app-image (trimmed JRE + app jars) under app/build/dist-jpackage/.
+# Configuration cache is disabled: the jlink/jpackage Exec tasks are CC-incompatible.
+package:
+    {{gradlew}} :app:jpackageImage {{gradle_flags}} --no-configuration-cache
+
+# Build the app-image and smoke it: run the bundled launcher over samples/, asserting output.
+smoke: package
+    {{sh}} 'app/build/dist-jpackage/despeckle/bin/despeckle samples artifacts/smoke-out --report artifacts/smoke-report --force'
 
 # ----- format / lint (mirrors CI + the lefthook gates) -----
 
@@ -192,12 +211,12 @@ tools-latest:
 
 # Preview the curated OpenRewrite patch without modifying any files.
 rewrite-check:
-    {{gradlew}} rewriteDryRun {{gradle_flags}}
+    {{gradlew}} rewriteDryRun {{gradle_flags}} --no-configuration-cache
 
 # Apply the curated OpenRewrite pass, then let Spotless re-impose the layout.
 # OpenRewrite is intentionally opt-in — it is not in `just build` or pre-push.
 rewrite:
-    {{gradlew}} rewriteRun {{gradle_flags}}
+    {{gradlew}} rewriteRun {{gradle_flags}} --no-configuration-cache
     {{gradlew}} spotlessApply {{gradle_flags}}
 
 # ----- git hooks -----

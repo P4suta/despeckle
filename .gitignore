@@ -1,7 +1,9 @@
-# Gradle
-/.gradle/
+# Gradle — match at any depth so every module's build/.gradle is ignored, not just the root's
+# (the build is now multi-module: domain/, port/, application/, infrastructure/, observability/,
+# app/, plus the build-logic included build, each producing their own build/ and .gradle/).
+.gradle/
+build/
 /.gradle-home/
-/build/
 
 # despeckle outputs
 /artifacts/
