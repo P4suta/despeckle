@@ -8,7 +8,15 @@
        page stems in escape(); SpotBugs' XSS heuristic flags the StringBuilder
        sink regardless. -->
   <Match>
-    <Class name="io.github.p4suta.despeckle.report.Report"/>
+    <Class name="io.github.p4suta.despeckle.infrastructure.report.HtmlReporter"/>
     <Bug pattern="XSS_REQUEST_PARAMETER_TO_SERVLET_WRITER"/>
+  </Match>
+  <!-- The application services are the composition target of dependency injection: they store the
+       injected ports and hold Config records carrying Path/OptionalInt. That is the intended,
+       idiomatic shape (the ports are stateless adapters, the Configs are immutable value records),
+       so EI_EXPOSE_REP/REP2 here flags the DI pattern itself, not a real leak. -->
+  <Match>
+    <Package name="io.github.p4suta.despeckle.application"/>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
   </Match>
 </FindBugsFilter>

@@ -23,6 +23,12 @@ rewrite-recipe-bom = "3.31.0"
 # each bump; the matching 3.31.0 numbers are incidental, not the guarantee.
 rewrite-java-security = "3.31.0"
 google-java-format = "1.35.0"
+jacoco = "0.8.13"
+# `pitest` is the PIT analysis tool; `pitestJunit5Plugin` is the JUnit 5 bridge. The bridge
+# alias is a single camelCase token on purpose: a dashed `pitest-...` name would turn `pitest`
+# into a namespace node in the generated accessors and shadow the `libs.versions.pitest` leaf.
+pitest = "1.20.2"
+pitestJunit5Plugin = "1.2.3"
 
 [libraries]
 commons-cli = { module = "commons-cli:commons-cli", version.ref = "commons-cli" }
@@ -50,3 +56,4 @@ spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 errorprone = { id = "net.ltgt.errorprone", version.ref = "errorprone-plugin" }
 spotbugs = { id = "com.github.spotbugs", version.ref = "spotbugs-plugin" }
 rewrite = { id = "org.openrewrite.rewrite", version.ref = "rewrite-plugin" }
+pitest = { id = "info.solidsoft.pitest", version = "1.19.0" }

@@ -40,8 +40,8 @@ read (Leptonica) → keep components larger than k, 8-connected
 Hole-filling is thickness-aware: a white pin-hole is closed only when the ink
 ringing it is solid (survives an opening by ~half the speck size). The fine
 gaps inside small or complex glyphs are ringed by *thin* strokes, so they are
-left alone — small running heads like 「第二省察」 stay crisp instead of
-filling in.
+left alone — small running heads and the fine strokes inside complex kanji
+stay crisp instead of filling in.
 
 `k` (the speck size) defaults to `dpi / 100` — about 3 px at 300 dpi, 6 px
 at 600. The resolution is read from each page's own tag when `--dpi` is
