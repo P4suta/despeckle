@@ -50,6 +50,11 @@ final class DespeckleCliTest {
     }
 
     @Test
+    void flipbookWithoutReportIsUsageError() {
+        assertEquals(2, new DespeckleCli().run(new String[] {"in", "out", "--flipbook"}));
+    }
+
+    @Test
     void nonNumericJobsIsUsageError() {
         assertEquals(2, new DespeckleCli().run(new String[] {"in", "out", "--jobs", "many"}));
     }
@@ -98,6 +103,14 @@ final class DespeckleCliTest {
         assertFalse(config.force());
         assertTrue(config.options().fillHoles(), "hole-filling on by default");
         assertTrue(config.options().removeIsolatedDust(), "isolated-dust pass on by default");
+        assertFalse(config.flipbook(), "flip-book off by default");
+    }
+
+    @Test
+    void flipbookWithReportIsCarriedIntoTheConfig() throws Exception {
+        DespeckleCli.Parsed parsed = parse("in", "out", "--report", "r", "--flipbook");
+        assertTrue(parsed.flipbook());
+        assertTrue(DespeckleCli.toConfig(parsed).flipbook());
     }
 
     @Test

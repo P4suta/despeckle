@@ -94,6 +94,11 @@ public final class DespeckleCli {
                         ? Path.of(cmd.getOptionValue(DespeckleOptions.REPORT))
                         : null;
 
+        boolean flipbook = cmd.hasOption(DespeckleOptions.FLIPBOOK);
+        if (flipbook && reportDir == null) {
+            throw new ParseException("--flipbook needs --report");
+        }
+
         int jobs =
                 cmd.hasOption(DespeckleOptions.JOBS)
                         ? parseInt(cmd.getOptionValue(DespeckleOptions.JOBS), DespeckleOptions.JOBS)
@@ -128,6 +133,7 @@ public final class DespeckleCli {
                 inputDir,
                 outputDir,
                 reportDir,
+                flipbook,
                 jobs,
                 format,
                 glob,
@@ -156,7 +162,8 @@ public final class DespeckleCli {
                 Math.max(1, parsed.jobs()),
                 parsed.force(),
                 processOptions,
-                parsed.reportDir());
+                parsed.reportDir(),
+                parsed.flipbook());
     }
 
     private static OptionalInt optionalInt(CommandLine cmd, String optName) throws ParseException {
@@ -213,6 +220,7 @@ public final class DespeckleCli {
             Path inputDir,
             Path outputDir,
             @Nullable Path reportDir,
+            boolean flipbook,
             int jobs,
             OutputFormat format,
             String glob,

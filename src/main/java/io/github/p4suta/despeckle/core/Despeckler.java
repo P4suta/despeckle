@@ -62,7 +62,7 @@ public final class Despeckler {
                 options.resolution(imageDpi).ifPresent(current::setResolution);
                 current.write(output, format.toIff(sourceFormat));
                 return new ProcessResult(
-                        componentsBefore - componentsAfter, blackBefore, blackAfter);
+                        componentsBefore, componentsAfter, blackBefore, blackAfter);
             } finally {
                 current.close();
             }

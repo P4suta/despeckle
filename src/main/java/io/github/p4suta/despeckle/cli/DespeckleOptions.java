@@ -16,6 +16,7 @@ final class DespeckleOptions {
     static final String HELP = "help";
     static final String VERSION = "version";
     static final String REPORT = "report";
+    static final String FLIPBOOK = "flipbook";
     static final String JOBS = "jobs";
     static final String FORMAT = "format";
     static final String GLOB = "glob";
@@ -48,6 +49,13 @@ final class DespeckleOptions {
                         .hasArg()
                         .argName("DIR")
                         .desc("Write a before/overlay/after HTML report here.")
+                        .get());
+        options.addOption(
+                Option.builder()
+                        .longOpt(FLIPBOOK)
+                        .desc(
+                                "With --report, also assemble the overlays into an animated-WebP"
+                                        + " flip-book (needs libwebp's img2webp).")
                         .get());
         options.addOption(
                 Option.builder("j")

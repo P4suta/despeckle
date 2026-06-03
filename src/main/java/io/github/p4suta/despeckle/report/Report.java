@@ -7,17 +7,24 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import javax.imageio.ImageIO;
+import org.jspecify.annotations.Nullable;
 
 /**
- * Optional before / overlay / after report.
+ * Optional before / overlay / after report, plus a corpus-wide diagnostic suite.
  *
  * <p>For each page it writes the original and cleaned images as PNG (via Leptonica) plus an overlay
- * that paints every removed pixel red over the original, then emits an {@code index.html}. This is
- * exactly the human eyeballing surface that lets you confirm dust was removed without eating
- * punctuation or ruby. It is read-only with respect to the pipeline.
+ * that paints every removed pixel red over the original. At {@link #finish()} it rolls the per-page
+ * stats into three corpus artifacts — a removed-pixel {@link RemovedHeatmap heatmap}, a {@link
+ * ConvergenceChartRenderer component-convergence chart} and a {@link RemovalChartRenderer per-page
+ * removal chart}, each encoded as lossless WebP — and, with {@code --flipbook}, an animated WebP
+ * {@link Flipbook} of the overlays. It emits an {@code index.html} tying them together. This is the
+ * human eyeballing surface that lets you confirm dust was removed without eating punctuation or
+ * ruby. It is read-only with respect to the pipeline.
  */
 public final class Report {
 
@@ -26,28 +33,33 @@ public final class Report {
     private static final int OVER_REMOVAL_WARN_PERCENT = 3;
 
     private final Path outDir;
-    private final ConcurrentLinkedQueue<Row> rows = new ConcurrentLinkedQueue<>();
+    private final boolean flipbook;
+    private final RemovedHeatmap heatmap = new RemovedHeatmap();
+    private final ConcurrentLinkedQueue<PageStat> stats = new ConcurrentLinkedQueue<>();
 
-    private Report(Path outDir) {
+    private Report(Path outDir, boolean flipbook) {
         this.outDir = outDir;
+        this.flipbook = flipbook;
     }
 
     /**
      * Create the report directory tree.
      *
      * @param outDir the report root
+     * @param flipbook whether to assemble the animated-WebP overlay flip-book at finish
      * @return a ready report
      * @throws IOException if the directories cannot be created
      */
-    public static Report create(Path outDir) throws IOException {
+    public static Report create(Path outDir, boolean flipbook) throws IOException {
         for (String panel : List.of("before", "overlay", "after")) {
             Files.createDirectories(outDir.resolve(panel));
         }
-        return new Report(outDir);
+        return new Report(outDir, flipbook);
     }
 
     /**
-     * Render and record the three panels for one page. Thread-safe.
+     * Render and record the three panels for one page, folding its removed pixels into the corpus
+     * heatmap as it goes. Thread-safe.
      *
      * @param relativeStem page path relative to the input root
      * @param inputPath original page on disk
@@ -68,23 +80,68 @@ public final class Report {
         try (Pix after = Pix.read(outputPath)) {
             after.writePng(afterPng);
         }
-        writeOverlay(beforePng, afterPng, overlayPng);
+        writeOverlayAndAccumulate(beforePng, afterPng, overlayPng);
 
-        rows.add(new Row(stem, result.componentsRemoved(), result.removedBlackPixelRatio()));
+        stats.add(
+                new PageStat(
+                        stem,
+                        result.componentsBefore(),
+                        result.componentsAfter(),
+                        result.removedBlackPixelRatio()));
     }
 
     /**
-     * Write {@code index.html} listing every page.
+     * Write the corpus artifacts and {@code index.html} listing every page.
      *
-     * @throws IOException if the index cannot be written
+     * @throws IOException if an artifact cannot be written
      */
     public void finish() throws IOException {
-        List<Row> sorted = rows.stream().sorted((a, b) -> a.stem().compareTo(b.stem())).toList();
-        long totalRemoved = sorted.stream().mapToLong(Row::componentsRemoved).sum();
+        List<PageStat> sorted =
+                stats.stream().sorted(Comparator.comparing(PageStat::stem)).toList();
+        long totalRemoved = sorted.stream().mapToLong(PageStat::componentsRemoved).sum();
+
+        String heatmapFile = writeArtifact("removed-heatmap", heatmap.render(sorted.size()));
+        String convergenceFile =
+                writeArtifact("corpus-convergence", ConvergenceChartRenderer.render(sorted));
+        String removalFile = writeArtifact("removal-chart", RemovalChartRenderer.render(sorted));
+
+        boolean flipbookWritten = flipbook && writeFlipbook(sorted);
+
         Files.writeString(
                 outDir.resolve("index.html"),
-                renderHtml(sorted, totalRemoved),
+                renderHtml(
+                        sorted,
+                        totalRemoved,
+                        heatmapFile,
+                        convergenceFile,
+                        removalFile,
+                        flipbookWritten ? "flipbook.webp" : null),
                 StandardCharsets.UTF_8);
+    }
+
+    private boolean writeFlipbook(List<PageStat> sorted) throws IOException {
+        List<Path> overlays = new ArrayList<>(sorted.size());
+        for (PageStat stat : sorted) {
+            overlays.add(outDir.resolve("overlay").resolve(stat.stem() + ".png"));
+        }
+        return Flipbook.write(outDir, overlays);
+    }
+
+    /**
+     * Write a corpus image, preferring lossless WebP and keeping the PNG only when {@code cwebp} is
+     * unavailable. Returns the file name actually written, so the HTML links the real artifact.
+     */
+    private String writeArtifact(String basename, BufferedImage img) throws IOException {
+        Path png = outDir.resolve(basename + ".png");
+        if (!ImageIO.write(img, "png", png.toFile())) {
+            throw new IOException("no PNG writer available for " + png);
+        }
+        Path webp = outDir.resolve(basename + ".webp");
+        if (Webp.encode(png, webp)) {
+            Files.deleteIfExists(png);
+            return basename + ".webp";
+        }
+        return basename + ".png";
     }
 
     private Path panelPath(String panel, String stem) throws IOException {
@@ -96,7 +153,16 @@ public final class Report {
         return path;
     }
 
-    private static void writeOverlay(Path beforePng, Path afterPng, Path overlayPng)
+    /**
+     * Build the red-over-grey overlay for one page and, in the same single pass, drop each removed
+     * pixel into the calling thread's heatmap histogram.
+     *
+     * <p>Pixels are pulled a row at a time via the bulk {@code getRGB(x, y, w, 1, ...)} — one call
+     * per row, not one per pixel — which is the difference between a fast scan and a glacial one on
+     * a multi-megapixel page, while the luma test (and so the set of "removed" pixels) is
+     * byte-for-byte the same as the per-pixel form.
+     */
+    private void writeOverlayAndAccumulate(Path beforePng, Path afterPng, Path overlayPng)
             throws IOException {
         BufferedImage before = ImageIO.read(beforePng.toFile());
         BufferedImage after = ImageIO.read(afterPng.toFile());
@@ -106,15 +172,29 @@ public final class Report {
         int width = Math.min(before.getWidth(), after.getWidth());
         int height = Math.min(before.getHeight(), after.getHeight());
         BufferedImage overlay = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+
+        long[] histogram = heatmap.threadHistogram();
+        int[] beforeRow = new int[width];
+        int[] afterRow = new int[width];
+        int[] overlayRow = new int[width];
         for (int y = 0; y < height; y++) {
+            before.getRGB(0, y, width, 1, beforeRow, 0, width);
+            after.getRGB(0, y, width, 1, afterRow, 0, width);
             for (int x = 0; x < width; x++) {
-                int beforeLuma = luma(before.getRGB(x, y));
-                int afterLuma = luma(after.getRGB(x, y));
-                boolean removed = beforeLuma < LUMA_MIDPOINT && afterLuma >= LUMA_MIDPOINT;
-                overlay.setRGB(x, y, removed ? RED : gray(beforeLuma));
+                int beforeLuma = luma(beforeRow[x]);
+                boolean removed = beforeLuma < LUMA_MIDPOINT && luma(afterRow[x]) >= LUMA_MIDPOINT;
+                if (removed) {
+                    overlayRow[x] = RED;
+                    histogram[RemovedHeatmap.binIndex(x, y, width, height)]++;
+                } else {
+                    overlayRow[x] = gray(beforeLuma);
+                }
             }
+            overlay.setRGB(0, y, width, 1, overlayRow, 0, width);
         }
-        ImageIO.write(overlay, "png", overlayPng.toFile());
+        if (!ImageIO.write(overlay, "png", overlayPng.toFile())) {
+            throw new IOException("no PNG writer available for " + overlayPng);
+        }
     }
 
     private static int luma(int rgb) {
@@ -134,19 +214,34 @@ public final class Report {
         return dot > sep ? path.substring(0, dot) : path;
     }
 
-    private record Row(String stem, int componentsRemoved, double removedRatio) {}
-
-    private static String renderHtml(List<Row> rows, long totalRemoved) {
-        StringBuilder html = new StringBuilder(4096);
+    private static String renderHtml(
+            List<PageStat> rows,
+            long totalRemoved,
+            String heatmapFile,
+            String convergenceFile,
+            String removalFile,
+            @Nullable String flipbookFile) {
+        StringBuilder html = new StringBuilder(8192);
         html.append("<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\">")
                 .append("<title>despeckle report</title><style>")
                 .append(
                         "body{font-family:system-ui,sans-serif;margin:2rem;background:#111;color:#eee}")
-                .append("h1{font-size:1.2rem}table{border-collapse:collapse;width:100%}")
+                .append("h1{font-size:1.2rem}h2{font-size:1rem;color:#aaa;margin-top:1.5rem}")
+                .append("table{border-collapse:collapse;width:100%}")
                 .append(
                         "th,td{padding:.4rem .6rem;border-bottom:1px solid"
                                 + " #333;vertical-align:top}")
                 .append("th{text-align:left;font-weight:600;color:#aaa}")
+                .append(
+                        ".corpus{display:flex;flex-wrap:wrap;gap:1rem;align-items:flex-start;margin:.6rem"
+                            + " 0 1.2rem}")
+                .append(
+                        ".corpus figure{margin:0}.corpus"
+                            + " img{max-width:400px;height:auto;background:#fff;border:1px solid"
+                            + " #333}")
+                .append(
+                        ".corpus"
+                            + " figcaption{font-size:.8rem;color:#888;text-align:center;margin-top:.2rem}")
                 .append(
                         ".panels{display:grid;grid-template-columns:repeat(3,1fr);gap:.4rem;margin-top:.4rem}")
                 .append(".panels img{width:100%;height:auto;background:#fff}")
@@ -157,12 +252,20 @@ public final class Report {
                 .append(rows.size())
                 .append(" page(s), ")
                 .append(totalRemoved)
-                .append(" component(s) removed</h1><table>")
+                .append(" component(s) removed</h1>")
+                .append("<h2>corpus</h2><div class=\"corpus\">")
+                .append(corpusFigure(heatmapFile, "removed-pixel heatmap"))
+                .append(corpusFigure(convergenceFile, "component convergence (before → after)"))
+                .append(corpusFigure(removalFile, "per-page removal"));
+        if (flipbookFile != null) {
+            html.append(corpusFigure(flipbookFile, "overlay flip-book"));
+        }
+        html.append("</div><h2>pages</h2><table>")
                 .append("<tr><th>page</th><th>removed</th><th>black&nbsp;cut</th>")
                 .append("<th>before / overlay / after</th></tr>");
-        for (Row row : rows) {
+        for (PageStat row : rows) {
             String stem = escape(row.stem());
-            int pct = (int) Math.round(row.removedRatio() * 100);
+            int pct = row.removedPercent();
             html.append("<tr><td class=\"stem\">")
                     .append(stem)
                     .append("</td><td>")
@@ -178,6 +281,14 @@ public final class Report {
                     .append("</div></td></tr>");
         }
         return html.append("</table></body></html>").toString();
+    }
+
+    private static String corpusFigure(String file, String caption) {
+        return "<figure><img src=\""
+                + file
+                + "\" loading=\"lazy\"><figcaption>"
+                + caption
+                + "</figcaption></figure>";
     }
 
     private static String figure(String panel, String stem) {
