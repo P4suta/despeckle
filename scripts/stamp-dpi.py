@@ -45,19 +45,56 @@ def dominant_ppi(pdf):
     return ppi if ppi > 0 else DEFAULT_DPI
 
 
+def stamp_exiftool(pages, ppi):
+    """Set the TIFF resolution tags in place — no pixel re-encode (the fast path).
+
+    Rewrites only the IFD tags (XResolution/YResolution/ResolutionUnit), never the
+    pixel strips. ResolutionUnit=inches → the TIFF unit enum 2 that PIL's dpi= also
+    writes, so Leptonica reads back the same value. One exiftool process stamps the
+    whole book.
+    """
+    subprocess.run(
+        [
+            "exiftool",
+            "-overwrite_original",  # no *_original sidecars (would double disk)
+            "-q",
+            f"-XResolution={ppi}",
+            f"-YResolution={ppi}",
+            "-ResolutionUnit=inches",
+            *pages,
+        ],
+        check=True,
+    )
+
+
+def stamp_pil(pages, ppi):
+    """Fallback (DESPECKLE_STAMP=pil): rewrite each TIFF via Pillow.
+
+    Re-encodes the pixels, but is the long-proven path if a libtiff build ever fails
+    to read exiftool's RATIONAL resolution tags.
+    """
+    from PIL import Image  # deferred: only this path needs Pillow
+
+    for path in pages:
+        with Image.open(path) as im:
+            im.load()
+            im.save(path, dpi=(ppi, ppi))
+
+
 def main():
     if len(sys.argv) != 3:
         sys.exit("usage: stamp-dpi.py <source.pdf> <tiff_dir>")
     pdf, tiff_dir = sys.argv[1], sys.argv[2]
 
-    from PIL import Image  # deferred: only the stamping path needs Pillow
-
     ppi = dominant_ppi(pdf)
     pages = sorted(glob.glob(os.path.join(tiff_dir, "*.tif")))
-    for path in pages:
-        with Image.open(path) as im:
-            im.load()
-            im.save(path, dpi=(ppi, ppi))
+    if not pages:
+        print(f"no TIFF pages in {tiff_dir}")
+        return
+    if os.environ.get("DESPECKLE_STAMP") == "pil":
+        stamp_pil(pages, ppi)
+    else:
+        stamp_exiftool(pages, ppi)
     print(f"stamped {len(pages)} TIFF page(s) in {tiff_dir} @ {ppi} dpi")
 
 
