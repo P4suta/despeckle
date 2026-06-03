@@ -25,14 +25,17 @@ import com.tngtech.archunit.lang.ArchRule;
  * :infrastructure}, {@code :observability}, and {@code :app}, most of the original onion rules are
  * guaranteed at compile time by the absence of a {@code project()} dependency, so they are dropped
  * here: {@code layeredArchitectureIsRespected}, {@code reportDoesNotDependOnCliOrRunner}, {@code
- * runnerDoesNotDependOnCli}, {@code cliDoesNotDependOnReport}, {@code pdfBoxConfinedToPipeline},
- * and {@code filesystemAccessConfined} are simply not on the offending module's classpath — PDFBox
- * lives only in {@code :infrastructure}, {@code :application} cannot see the CLI or the report
- * adapter, and so on. Mirroring tate-yoko-pdf's {@code LayerDependencyTest}, what remains are the
- * intra-graph, class-level conventions a missing dependency does not catch: confining the Foreign
- * Function &amp; Memory API and method handles to the Leptonica island, keeping standard-stream
- * access in the CLI front ends, the cross-cutting coding rules, JSpecify-only nullness, and freedom
- * from package cycles.
+ * runnerDoesNotDependOnCli}, {@code cliDoesNotDependOnReport}, and {@code pdfBoxConfinedToPipeline}
+ * are simply not on the offending module's classpath — PDFBox lives only in {@code
+ * :infrastructure}, {@code :application} cannot see the CLI or the report adapter, and so on.
+ * {@code filesystemAccessConfined} is narrowed rather than dropped: the module graph leaves {@code
+ * java.nio.file.Files} reachable everywhere (it is in {@code java.base}), so its {@code
+ * domain}/{@code port} half is kept as {@link #domainAndPortDoNotTouchTheFilesystem}. Mirroring
+ * tate-yoko-pdf's {@code LayerDependencyTest}, what remains are the intra-graph, class-level
+ * conventions a missing dependency does not catch: that filesystem-freedom of the pure layers,
+ * confining the Foreign Function &amp; Memory API and method handles to the Leptonica island,
+ * keeping standard-stream access in the CLI front ends, the cross-cutting coding rules,
+ * JSpecify-only nullness, and freedom from package cycles.
  *
  * <p>Analyzed from {@code :app}, whose test classpath sees every module. The {@code testFixtures}
  * sourceSet of {@code :infrastructure} is excluded ({@link NoTestFixtures}) so fixtures may use
@@ -70,6 +73,25 @@ final class LayerDependencyTest {
     @ArchTest
     static final ArchRule packagesAreFreeOfCycles =
             slices().matching("io.github.p4suta.despeckle.(*)..").should().beFreeOfCycles();
+
+    /**
+     * The pure layers stay free of filesystem I/O. {@code java.nio.file.Path} is a value they may
+     * name (it appears in {@code port} signatures and the {@code domain} naming helpers), but
+     * {@code java.nio.file.Files} — the read/write helper — belongs to the adapters and the
+     * orchestration. The module graph cannot enforce this (both live in {@code java.base}), so it
+     * is pinned here, keeping the {@code domain}/{@code port} part of the original {@code
+     * filesystemAccessConfined} guarantee alive now that the broad onion rule is gone.
+     */
+    @ArchTest
+    static final ArchRule domainAndPortDoNotTouchTheFilesystem =
+            noClasses()
+                    .that()
+                    .resideInAnyPackage(
+                            "io.github.p4suta.despeckle.domain..",
+                            "io.github.p4suta.despeckle.port..")
+                    .should()
+                    .dependOnClassesThat()
+                    .haveFullyQualifiedName("java.nio.file.Files");
 
     /**
      * The Foreign Function &amp; Memory API is the one piece of native, "restricted" surface; it
