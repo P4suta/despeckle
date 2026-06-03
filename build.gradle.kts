@@ -56,6 +56,49 @@ reporting {
     }
 }
 
+// Javadoc for GitHub Pages. The root has no sources, so each module writes its own
+// build/docs/javadoc; this collects them under build/docs/javadoc/<module> (the path the docs
+// workflow uploads) behind a small landing index. A Copy — not a cross-project Javadoc task —
+// keeps it configuration-cache-safe: it only reads each module's javadoc *output* by relative
+// path and depends on that module's javadoc task. The module list and output dir are captured as
+// task-local vals (not script-top-level fields) so the doLast does not pull a script reference
+// into the configuration cache.
+tasks.register<Copy>("aggregateJavadoc") {
+    group = "documentation"
+    description = "Collect every module's Javadoc under build/docs/javadoc for GitHub Pages."
+    val modules = listOf("domain", "port", "application", "infrastructure", "observability", "app")
+    val outDir = layout.buildDirectory.dir("docs/javadoc")
+    modules.forEach { module ->
+        dependsOn(":$module:javadoc")
+        from("$module/build/docs/javadoc") { into(module) }
+    }
+    into(outDir)
+    doLast {
+        val links =
+            modules.joinToString("\n") { module ->
+                "  <li><a href=\"$module/index.html\"><code>:$module</code></a></li>"
+            }
+        outDir
+            .get()
+            .asFile
+            .resolve("index.html")
+            .writeText(
+                """
+                <!doctype html>
+                <html lang="en">
+                <head><meta charset="utf-8"><title>despeckle &mdash; API docs</title></head>
+                <body>
+                <h1>despeckle &mdash; module API docs</h1>
+                <ul>
+                $links
+                </ul>
+                </body>
+                </html>
+                """.trimIndent() + "\n",
+            )
+    }
+}
+
 // OpenRewrite: a curated pass defined declaratively in rewrite.yml (auto-discovered
 // at the project root), run on demand with `./gradlew rewriteRun` / `just rewrite`
 // (preview with `rewriteDryRun` / `just rewrite-check`). Deliberately not wired into

@@ -28,9 +28,10 @@ jobs:
           distribution: temurin
           java-version: "25"
       - uses: gradle/actions/setup-gradle@4d9f0ba0025fe599b4ebab900eb7f3a1d93ef4c2 # v5.0.0
-      # `javadoc` only parses source; it does not load Leptonica, so the native
-      # library is not needed here (unlike the test job in ci.yml).
-      - run: ./gradlew javadoc --no-daemon -Dorg.gradle.java.installations.auto-download=false
+      # `aggregateJavadoc` gathers every module's Javadoc into build/docs/javadoc (the root project
+      # has no sources of its own). Javadoc only parses source; it does not load Leptonica, so the
+      # native library is not needed here (unlike the test job in ci.yml).
+      - run: ./gradlew aggregateJavadoc --no-daemon -Dorg.gradle.java.installations.auto-download=false
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: build/docs/javadoc
