@@ -56,6 +56,23 @@ public record ProcessOptions(
     }
 
     /**
+     * The same options with an explicit resolution baked in. The pipeline uses this to pin the
+     * scan's detected DPI onto every page, so the speck filter sizes correctly off images that
+     * {@code pdfimages} left tagged at a default 72 dpi.
+     *
+     * @param dpi the resolution to honor for every page
+     * @return a copy with {@code dpi} set
+     */
+    public ProcessOptions withDpi(int dpi) {
+        return new ProcessOptions(
+                OptionalInt.of(dpi),
+                speckSizePx,
+                fillHoles,
+                removeIsolatedDust,
+                isolatedDustSizePx);
+    }
+
+    /**
      * Default options: auto-detect resolution, derived speck size, hole-filling on, and the
      * isolated-dust pass on (it only clears genuinely isolated specks, never typography).
      */

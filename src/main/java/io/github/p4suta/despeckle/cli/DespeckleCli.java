@@ -6,6 +6,7 @@ import io.github.p4suta.despeckle.runner.Runner;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.OptionalInt;
@@ -38,12 +39,18 @@ public final class DespeckleCli {
 
     private static final String SYNTAX = "despeckle <INPUT_DIR> <OUTPUT_DIR> [options]";
     private static final String DESCRIPTION =
-            "Remove scanner dust from bitonal Japanese-novel scans.";
+            "Remove scanner dust from bitonal Japanese-novel scans. To clean PDFs end-to-end"
+                + " (pdfimages -> despeckle -> lossless JBIG2), use 'despeckle pipeline <in.pdf>"
+                + " <out.pdf>'; a directory there batches every top-level *.pdf.";
 
     private final Options options = DespeckleOptions.build();
 
     /** Parse {@code args}, run the pipeline, and return the process exit code. */
     public int run(String[] args) {
+        if (args.length > 0 && "pipeline".equals(args[0])) {
+            return new PipelineCli().run(Arrays.copyOfRange(args, 1, args.length));
+        }
+
         CommandLine cmd;
         try {
             cmd = new DefaultParser().parse(options, args);
@@ -185,7 +192,8 @@ public final class DespeckleCli {
         try {
             return OutputFormat.valueOf(raw.strip().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            throw new ParseException("--format must be one of pbm | png | same, but got: " + raw);
+            throw new ParseException(
+                    "--format must be one of pbm | png | tiff | same, but got: " + raw);
         }
     }
 

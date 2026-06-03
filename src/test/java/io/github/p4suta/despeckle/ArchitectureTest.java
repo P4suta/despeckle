@@ -52,6 +52,8 @@ class ArchitectureTest {
                     .definedBy("io.github.p4suta.despeckle")
                     .layer("Cli")
                     .definedBy("io.github.p4suta.despeckle.cli..")
+                    .layer("Pipeline")
+                    .definedBy("io.github.p4suta.despeckle.pipeline..")
                     .layer("Runner")
                     .definedBy("io.github.p4suta.despeckle.runner..")
                     .layer("Report")
@@ -62,12 +64,14 @@ class ArchitectureTest {
                     .mayNotBeAccessedByAnyLayer()
                     .whereLayer("Cli")
                     .mayOnlyBeAccessedByLayers("Main")
-                    .whereLayer("Runner")
+                    .whereLayer("Pipeline")
                     .mayOnlyBeAccessedByLayers("Cli")
+                    .whereLayer("Runner")
+                    .mayOnlyBeAccessedByLayers("Cli", "Pipeline")
                     .whereLayer("Report")
-                    .mayOnlyBeAccessedByLayers("Runner")
+                    .mayOnlyBeAccessedByLayers("Runner", "Pipeline")
                     .whereLayer("Core")
-                    .mayOnlyBeAccessedByLayers("Cli", "Runner", "Report");
+                    .mayOnlyBeAccessedByLayers("Cli", "Pipeline", "Runner", "Report");
 
     /** No package may sit in a dependency cycle with another. */
     @ArchTest
@@ -144,12 +148,26 @@ class ArchitectureTest {
     static final ArchRule filesystemAccessConfined =
             noClasses()
                     .that()
-                    .resideOutsideOfPackages("..runner..", "..report..")
+                    .resideOutsideOfPackages("..runner..", "..report..", "..pipeline..")
                     .and()
                     .doNotHaveFullyQualifiedName("io.github.p4suta.despeckle.core.Leptonica")
                     .should()
                     .dependOnClassesThat()
                     .haveFullyQualifiedName("java.nio.file.Files");
+
+    /**
+     * Apache PDFBox — the one PDF-writing library — is confined to the {@code pipeline} package
+     * (the JBIG2 assembler), so the rest of the tool stays a pure image pipeline that never touches
+     * a PDF type. The same isolation discipline as the FFM/Leptonica island.
+     */
+    @ArchTest
+    static final ArchRule pdfBoxConfinedToPipeline =
+            noClasses()
+                    .that()
+                    .resideOutsideOfPackage("io.github.p4suta.despeckle.pipeline..")
+                    .should()
+                    .dependOnClassesThat()
+                    .resideInAnyPackage("org.apache.pdfbox..", "org.apache.xmpbox..");
 
     /** Logging goes through SLF4J, never {@code java.util.logging}. */
     @ArchTest static final ArchRule noJavaUtilLogging = NO_CLASSES_SHOULD_USE_JAVA_UTIL_LOGGING;
@@ -175,8 +193,12 @@ class ArchitectureTest {
             noClasses()
                     .that()
                     .doNotHaveFullyQualifiedName("io.github.p4suta.despeckle.cli.DespeckleCli")
+                    .and()
+                    .doNotHaveFullyQualifiedName("io.github.p4suta.despeckle.cli.PipelineCli")
                     .should(ACCESS_STANDARD_STREAMS)
-                    .as("only the CLI front end (DespeckleCli) may access standard streams")
+                    .as(
+                            "only the CLI front ends (DespeckleCli, PipelineCli) may access"
+                                    + " standard streams")
                     .because(
                             "help/version/usage go straight to the process streams like a normal"
                                     + " CLI; every other layer logs through SLF4J");

@@ -31,6 +31,10 @@ dependencies {
     implementation(libs.slf4j.api)
     runtimeOnly(libs.slf4j.simple)
 
+    // PDFBox builds the cleaned lossless-JBIG2 output PDF in `despeckle pipeline`.
+    implementation(libs.pdfbox)
+    implementation(libs.xmpbox)
+
     // JSpecify @Nullable: the vocabulary NullAway reads to learn what may be null.
     implementation(libs.jspecify)
 

@@ -135,6 +135,16 @@ run input output *args:
     @test -x {{launcher}} || just assemble
     {{sh}} '{{launcher}} "{{input}}" "{{output}}" {{args}}'
 
+# Clean a scanned PDF end-to-end in one self-contained step (pdfimages -> despeckle ->
+# lossless JBIG2, pure Java; qpdf linearizes the result). A directory as the first arg
+# batches every top-level *.pdf into <out>/<name>.pdf. Supersedes the manual
+# extract -> run -> to-pdf chain for the common case. Extra args pass to the CLI:
+#   just pipeline scans/book.pdf out/book.pdf --report report/book
+#   just pipeline scans/ out/ --report reports/ --suffix _clean --force
+pipeline input output *args:
+    @test -x {{launcher}} || just assemble
+    {{sh}} '{{launcher}} pipeline "{{input}}" "{{output}}" {{args}}'
+
 # Smoke check: process the bundled samples/ into artifacts/ with an HTML report.
 run-sample:
     {{gradlew}} run {{gradle_flags}} \

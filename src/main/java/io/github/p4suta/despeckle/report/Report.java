@@ -17,14 +17,15 @@ import org.jspecify.annotations.Nullable;
 /**
  * Optional before / overlay / after report, plus a corpus-wide diagnostic suite.
  *
- * <p>For each page it writes the original and cleaned images as PNG (via Leptonica) plus an overlay
- * that paints every removed pixel red over the original. At {@link #finish()} it rolls the per-page
- * stats into three corpus artifacts — a removed-pixel {@link RemovedHeatmap heatmap}, a {@link
- * ConvergenceChartRenderer component-convergence chart} and a {@link RemovalChartRenderer per-page
- * removal chart}, each encoded as lossless WebP — and, with {@code --flipbook}, an animated WebP
- * {@link Flipbook} of the overlays. It emits an {@code index.html} tying them together. This is the
- * human eyeballing surface that lets you confirm dust was removed without eating punctuation or
- * ruby. It is read-only with respect to the pipeline.
+ * <p>For each page it writes the original and cleaned images plus an overlay that paints every
+ * removed pixel red over the original — slimmed to lossless WebP when {@code cwebp} is present,
+ * kept as PNG otherwise. At {@link #finish()} it rolls the per-page stats into three corpus
+ * artifacts — a removed-pixel {@link RemovedHeatmap heatmap}, a {@link ConvergenceChartRenderer
+ * component-convergence chart} and a {@link RemovalChartRenderer per-page removal chart}, each
+ * encoded as lossless WebP — and, with {@code --flipbook}, an animated WebP {@link Flipbook} of the
+ * overlays. It emits an {@code index.html} tying them together. This is the human eyeballing
+ * surface that lets you confirm dust was removed without eating punctuation or ruby. It is
+ * read-only with respect to the pipeline.
  */
 public final class Report {
 
@@ -34,12 +35,19 @@ public final class Report {
 
     private final Path outDir;
     private final boolean flipbook;
+
+    /**
+     * The extension every per-page panel is written with — {@code webp}, or {@code png} fallback.
+     */
+    private final String panelExt;
+
     private final RemovedHeatmap heatmap = new RemovedHeatmap();
     private final ConcurrentLinkedQueue<PageStat> stats = new ConcurrentLinkedQueue<>();
 
-    private Report(Path outDir, boolean flipbook) {
+    private Report(Path outDir, boolean flipbook, String panelExt) {
         this.outDir = outDir;
         this.flipbook = flipbook;
+        this.panelExt = panelExt;
     }
 
     /**
@@ -54,7 +62,9 @@ public final class Report {
         for (String panel : List.of("before", "overlay", "after")) {
             Files.createDirectories(outDir.resolve(panel));
         }
-        return new Report(outDir, flipbook);
+        // Probe cwebp once: when present every per-page panel is slimmed to lossless WebP, else
+        // PNG.
+        return new Report(outDir, flipbook, Webp.isAvailable() ? "webp" : "png");
     }
 
     /**
@@ -81,6 +91,12 @@ public final class Report {
             after.writePng(afterPng);
         }
         writeOverlayAndAccumulate(beforePng, afterPng, overlayPng);
+        if ("webp".equals(panelExt)) {
+            // The overlay was just built from the before/after panels, so it is safe to slim now.
+            slimToWebp(beforePng);
+            slimToWebp(afterPng);
+            slimToWebp(overlayPng);
+        }
 
         stats.add(
                 new PageStat(
@@ -88,6 +104,17 @@ public final class Report {
                         result.componentsBefore(),
                         result.componentsAfter(),
                         result.removedBlackPixelRatio()));
+    }
+
+    /**
+     * Convert a written {@code .png} panel to a sibling lossless {@code .webp}, dropping the PNG.
+     */
+    private static void slimToWebp(Path png) throws IOException {
+        String name = png.toString();
+        Path webp = Path.of(name.substring(0, name.length() - ".png".length()) + ".webp");
+        if (Webp.encode(png, webp)) {
+            Files.deleteIfExists(png);
+        }
     }
 
     /**
@@ -115,14 +142,15 @@ public final class Report {
                         heatmapFile,
                         convergenceFile,
                         removalFile,
-                        flipbookWritten ? "flipbook.webp" : null),
+                        flipbookWritten ? "flipbook.webp" : null,
+                        panelExt),
                 StandardCharsets.UTF_8);
     }
 
     private boolean writeFlipbook(List<PageStat> sorted) throws IOException {
         List<Path> overlays = new ArrayList<>(sorted.size());
         for (PageStat stat : sorted) {
-            overlays.add(outDir.resolve("overlay").resolve(stat.stem() + ".png"));
+            overlays.add(outDir.resolve("overlay").resolve(stat.stem() + "." + panelExt));
         }
         return Flipbook.write(outDir, overlays);
     }
@@ -220,7 +248,8 @@ public final class Report {
             String heatmapFile,
             String convergenceFile,
             String removalFile,
-            @Nullable String flipbookFile) {
+            @Nullable String flipbookFile,
+            String panelExt) {
         StringBuilder html = new StringBuilder(8192);
         html.append("<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\">")
                 .append("<title>despeckle report</title><style>")
@@ -275,9 +304,9 @@ public final class Report {
                     .append('>')
                     .append(pct)
                     .append("%</td><td><div class=\"panels\">")
-                    .append(figure("before", stem))
-                    .append(figure("overlay", stem))
-                    .append(figure("after", stem))
+                    .append(figure("before", stem, panelExt))
+                    .append(figure("overlay", stem, panelExt))
+                    .append(figure("after", stem, panelExt))
                     .append("</div></td></tr>");
         }
         return html.append("</table></body></html>").toString();
@@ -291,12 +320,14 @@ public final class Report {
                 + "</figcaption></figure>";
     }
 
-    private static String figure(String panel, String stem) {
+    private static String figure(String panel, String stem, String ext) {
         return "<figure><img src=\""
                 + panel
                 + "/"
                 + stem
-                + ".png\" loading=\"lazy\"><figcaption>"
+                + "."
+                + ext
+                + "\" loading=\"lazy\"><figcaption>"
                 + panel
                 + "</figcaption></figure>";
     }

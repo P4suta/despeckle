@@ -9,7 +9,9 @@ public enum OutputFormat {
     /** Write every page as binary PBM (P4). */
     PBM,
     /** Write every page as PNG. */
-    PNG;
+    PNG,
+    /** Write every page as CCITT Group-4 TIFF (1 bpp, lossless) — the pipeline's intermediate. */
+    TIFF;
 
     /**
      * Resolve to the Leptonica {@code IFF_*} code to pass to {@code pixWrite}.
@@ -22,6 +24,7 @@ public enum OutputFormat {
             case SAME -> sourceFormat;
             case PBM -> Leptonica.IFF_PNM;
             case PNG -> Leptonica.IFF_PNG;
+            case TIFF -> Leptonica.IFF_TIFF_G4;
         };
     }
 
@@ -31,6 +34,7 @@ public enum OutputFormat {
             case SAME -> null;
             case PBM -> "pbm";
             case PNG -> "png";
+            case TIFF -> "tif";
         };
     }
 }

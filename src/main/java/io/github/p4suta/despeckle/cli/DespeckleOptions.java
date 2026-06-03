@@ -1,8 +1,11 @@
 package io.github.p4suta.despeckle.cli;
 
 import io.github.p4suta.despeckle.core.ProcessOptions;
+import java.util.OptionalInt;
+import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
+import org.apache.commons.cli.ParseException;
 
 /**
  * The Commons CLI {@link Options} model and the canonical flag names.
@@ -17,6 +20,7 @@ final class DespeckleOptions {
     static final String VERSION = "version";
     static final String REPORT = "report";
     static final String FLIPBOOK = "flipbook";
+    static final String SUFFIX = "suffix";
     static final String JOBS = "jobs";
     static final String FORMAT = "format";
     static final String GLOB = "glob";
@@ -69,7 +73,7 @@ final class DespeckleOptions {
                         .longOpt(FORMAT)
                         .hasArg()
                         .argName("FMT")
-                        .desc("Output format: pbm | png | same (default: same).")
+                        .desc("Output format: pbm | png | tiff | same (default: same).")
                         .get());
         options.addOption(
                 Option.builder()
@@ -83,6 +87,16 @@ final class DespeckleOptions {
                         .longOpt(FORCE)
                         .desc("Overwrite a non-empty output directory.")
                         .get());
+        addCleanKnobs(options);
+        return options;
+    }
+
+    /**
+     * Add the despeckle clean knobs (resolution and the speck/hole/dust filters) shared by both the
+     * image-directory front end ({@link DespeckleCli}) and {@code despeckle pipeline} ({@link
+     * PipelineCli}), so the two never drift.
+     */
+    static void addCleanKnobs(Options options) {
         options.addOption(
                 Option.builder()
                         .longOpt(DPI)
@@ -130,6 +144,34 @@ final class DespeckleOptions {
                                 "Max size (px) of an isolated speck to remove; implies"
                                         + " --remove-isolated-dust (default: dpi/40).")
                         .get());
-        return options;
+    }
+
+    /**
+     * Build {@link ProcessOptions} from the parsed clean knobs. Mirrors {@link DespeckleCli}'s own
+     * wiring (an {@code --x}/{@code --no-x} pair where the feature is on unless opted out), and
+     * lets {@link ProcessOptions} reject non-positive sizes.
+     *
+     * @throws ParseException if an integer flag is not a number
+     */
+    static ProcessOptions cleanProcessOptions(CommandLine cmd) throws ParseException {
+        OptionalInt dpi = optionalInt(cmd, DPI);
+        OptionalInt speckSize = optionalInt(cmd, SPECK_SIZE);
+        OptionalInt isolatedDustSize = optionalInt(cmd, ISOLATED_DUST_SIZE);
+        boolean fillHoles = cmd.hasOption(FILL_HOLES) || !cmd.hasOption(NO_FILL_HOLES);
+        boolean removeIsolatedDust =
+                cmd.hasOption(REMOVE_ISOLATED_DUST) || !cmd.hasOption(NO_REMOVE_ISOLATED_DUST);
+        return new ProcessOptions(dpi, speckSize, fillHoles, removeIsolatedDust, isolatedDustSize);
+    }
+
+    private static OptionalInt optionalInt(CommandLine cmd, String optName) throws ParseException {
+        if (!cmd.hasOption(optName)) {
+            return OptionalInt.empty();
+        }
+        String raw = cmd.getOptionValue(optName);
+        try {
+            return OptionalInt.of(Integer.parseInt(raw.strip()));
+        } catch (NumberFormatException e) {
+            throw new ParseException("--" + optName + " expects an integer, but got: " + raw);
+        }
     }
 }
