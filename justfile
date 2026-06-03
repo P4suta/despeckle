@@ -68,7 +68,6 @@ doctor:
         check img2webp   img2webp -version; \
         check jbig2      jbig2 --version; \
         check qpdf       qpdf --version; \
-        check python3    python3 --version; \
     '
     @echo "==> doctor: ok"
 
