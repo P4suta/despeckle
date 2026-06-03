@@ -9,7 +9,6 @@
 #     PDF in one step (the old Python repack scripts are gone).
 #   - libwebp (cwebp + img2webp) — the report encodes its corpus charts as still
 #     WebP and the overlay flip-book as animated WebP.
-#   - python3 — only for scripts/check-tool-versions.py (the version-pin check).
 #   - The language-agnostic quality tools the repo already uses
 #     (typos, taplo, biome, yamlfmt, actionlint, lefthook).
 #
@@ -72,7 +71,6 @@ RUN apt-get update \
         git \
         libleptonica-dev \
         poppler-utils \
-        python3 \
         qpdf \
         sudo \
         unzip \

@@ -187,7 +187,7 @@ ci: lint build
 # The apt tools (qpdf, poppler-utils, ...) track the Ubuntu base and are not pinned,
 # so only the ARG-pinned downloads (just, typos, jbig2enc, ...) are compared.
 tools-latest:
-    {{docker_run}} python3 scripts/check-tool-versions.py
+    {{docker_run}} java scripts/CheckToolVersions.java
 
 # ----- openrewrite (advisory; never part of `just build` or the git hooks) -----
 

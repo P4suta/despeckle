@@ -6,8 +6,8 @@
 # compares each pin with the latest upstream release and goes red when one is
 # behind — so stale pins surface on their own instead of rotting silently.
 #
-# Same probe as `just tools-latest`; the script is standard-library Python, so it
-# runs on a bare runner without the dev image.
+# Same probe as `just tools-latest`; it is a single-file Java program (run with
+# `java`), so a JDK (setup-java) is all it needs — not the dev image.
 
 name: tool-freshness
 
@@ -26,7 +26,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165 # v5.0.0
+        with:
+          distribution: temurin
+          java-version: "25"
       - name: compare pins with latest upstream releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 scripts/check-tool-versions.py
+        run: java scripts/CheckToolVersions.java
