@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.OptionalInt;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.stream.Stream;
@@ -24,6 +25,7 @@ import org.apache.pdfbox.pdmodel.common.PDMetadata;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.common.PDStream;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Packs a directory of cleaned bitonal pages into a lossless-JBIG2 PDF — the Java port of {@code
@@ -31,25 +33,44 @@ import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
  * generic-region mode, lossless; never the lossy {@code -s} symbol mode) in parallel, then embedded
  * verbatim as a {@code /JBIG2Decode} image XObject via PDFBox. Because the per-page JBIG2 streams
  * come from the same {@code jbig2} binary the Python pipeline used, the decoded pages are
- * bit-identical; the PDF container is finished with a {@code qpdf --linearize} pass (in {@link
- * PdfPipeline}) to keep the Fast-Web-View output the Python path produced.
+ * bit-identical; the container is finished with a {@code qpdf --linearize} pass (the caller's) to
+ * keep the Fast-Web-View output the Python path produced.
+ *
+ * <p>Each page is sized by its own resolution (so a mixed-resolution book — e.g. a 600-dpi text
+ * with a 1200-dpi plate — comes out correctly), unless the caller forces one DPI; a page that
+ * carries no resolution falls back to {@link #DEFAULT_DPI}. This matches {@code jbig2-pdf.py}'s
+ * per-image {@code page_dpi}.
  */
 final class Jbig2PdfAssembler {
+
+    /** Page size assumed when an image carries no resolution (matches {@code jbig2-pdf.py}). */
+    static final int DEFAULT_DPI = 300;
 
     private static final COSName JBIG2_DECODE = COSName.getPDFName("JBIG2Decode");
 
     private Jbig2PdfAssembler() {}
 
-    /** A page ready to embed: its lossless JBIG2 stream (on disk) and its pixel size. */
-    private record Page(Path jbig2, int width, int height) {}
+    /** A page ready to embed: its lossless JBIG2 stream (on disk), pixel size and its own DPI. */
+    private record Page(Path jbig2, int width, int height, int dpi) {}
 
     /**
-     * Assemble {@code imageDir}'s cleaned pages into {@code outPdf}, inheriting {@code source}'s
-     * metadata and PDF version. {@code jb2Dir} holds the intermediate per-page JBIG2 streams (the
-     * caller owns its lifecycle); {@code dpi} sizes each page (px / dpi * 72).
+     * Assemble {@code imageDir}'s cleaned pages into {@code outPdf}.
+     *
+     * @param imageDir the directory of cleaned bitonal pages (name order is reading order)
+     * @param outPdf the lossless-JBIG2 PDF to write
+     * @param source a PDF whose Info dict, XMP and version are inherited, or {@code null} for none
+     * @param forcedDpi a single DPI to size every page with, or empty to read each image's own
+     * @param pool the worker pool the per-page {@code jbig2} encodes run on
+     * @param jb2Dir scratch directory for the intermediate per-page JBIG2 streams (caller-owned)
+     * @throws IOException if the directory is empty, a tool fails, or the write fails
      */
     static void assemble(
-            Path imageDir, Path outPdf, Path source, int dpi, ExecutorService pool, Path jb2Dir)
+            Path imageDir,
+            Path outPdf,
+            @Nullable Path source,
+            OptionalInt forcedDpi,
+            ExecutorService pool,
+            Path jb2Dir)
             throws IOException {
         List<Path> images = sortedImages(imageDir);
         if (images.isEmpty()) {
@@ -60,13 +81,13 @@ final class Jbig2PdfAssembler {
         for (int i = 0; i < images.size(); i++) {
             Path image = images.get(i);
             int index = i;
-            tasks.add(() -> encode(jbig2, image, jb2Dir, index));
+            tasks.add(() -> encode(jbig2, image, jb2Dir, index, forcedDpi));
         }
         List<Page> pages = NativeTools.awaitAll(pool, tasks);
 
         try (PDDocument doc = new PDDocument()) {
             for (Page page : pages) {
-                addPage(doc, page, dpi);
+                addPage(doc, page);
             }
             inheritMetadata(doc, source);
             doc.save(outPdf.toFile());
@@ -74,22 +95,26 @@ final class Jbig2PdfAssembler {
     }
 
     /** Encode one page to a lossless JBIG2 stream on disk; safe to run in parallel. */
-    private static Page encode(String jbig2, Path image, Path jb2Dir, int index)
+    private static Page encode(
+            String jbig2, Path image, Path jb2Dir, int index, OptionalInt forcedDpi)
             throws IOException {
         int width;
         int height;
+        int dpi;
         try (Pix pix = Pix.read(image)) {
             width = pix.width();
             height = pix.height();
+            int resolution = pix.resolution();
+            dpi = forcedDpi.orElse(resolution > 0 ? resolution : DEFAULT_DPI);
         }
         byte[] stream = NativeTools.capture(List.of(jbig2, "-p", image.toString()), 300);
         Path out = jb2Dir.resolve(String.format(Locale.ROOT, "%06d.jb2", index));
         Files.write(out, stream);
-        return new Page(out, width, height);
+        return new Page(out, width, height, dpi);
     }
 
     /** Embed one page's JBIG2 stream as a full-page {@code /JBIG2Decode} image XObject. */
-    private static void addPage(PDDocument doc, Page page, int dpi) throws IOException {
+    private static void addPage(PDDocument doc, Page page) throws IOException {
         COSStream cos = doc.getDocument().createCOSStream();
         // createRawOutputStream stores the bytes verbatim (no re-filtering) — the analogue of
         // pikepdf's Stream(pdf, data); createOutputStream(JBIG2Decode) would try to *encode*, which
@@ -107,8 +132,8 @@ final class Jbig2PdfAssembler {
         cos.setItem(COSName.FILTER, JBIG2_DECODE);
         PDImageXObject image = new PDImageXObject(new PDStream(cos), null);
 
-        float widthPt = points(page.width(), dpi);
-        float heightPt = points(page.height(), dpi);
+        float widthPt = points(page.width(), page.dpi());
+        float heightPt = points(page.height(), page.dpi());
         PDPage pdPage = new PDPage(new PDRectangle(widthPt, heightPt));
         doc.addPage(pdPage);
         try (PDPageContentStream content = new PDPageContentStream(doc, pdPage)) {
@@ -117,7 +142,14 @@ final class Jbig2PdfAssembler {
     }
 
     /** Copy the source PDF's Info dict, XMP metadata and (>= 1.4) version onto the output. */
-    private static void inheritMetadata(PDDocument doc, Path source) throws IOException {
+    private static void inheritMetadata(PDDocument doc, @Nullable Path source) throws IOException {
+        if (source == null) {
+            // No source scan to mirror (the topdf path may pack loose pages): keep PDFBox's own
+            // Info,
+            // but still never declare a version below 1.4, which JBIG2Decode requires.
+            doc.setVersion(Math.max(doc.getVersion(), 1.4f));
+            return;
+        }
         try (PDDocument src = Loader.loadPDF(source.toFile())) {
             COSDictionary srcInfo = src.getDocumentInformation().getCOSObject();
             COSDictionary outInfo = doc.getDocumentInformation().getCOSObject();

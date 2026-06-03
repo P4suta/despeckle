@@ -195,10 +195,12 @@ class ArchitectureTest {
                     .doNotHaveFullyQualifiedName("io.github.p4suta.despeckle.cli.DespeckleCli")
                     .and()
                     .doNotHaveFullyQualifiedName("io.github.p4suta.despeckle.cli.PipelineCli")
+                    .and()
+                    .doNotHaveFullyQualifiedName("io.github.p4suta.despeckle.cli.TopdfCli")
                     .should(ACCESS_STANDARD_STREAMS)
                     .as(
-                            "only the CLI front ends (DespeckleCli, PipelineCli) may access"
-                                    + " standard streams")
+                            "only the CLI front ends (DespeckleCli, PipelineCli, TopdfCli) may"
+                                    + " access standard streams")
                     .because(
                             "help/version/usage go straight to the process streams like a normal"
                                     + " CLI; every other layer logs through SLF4J");

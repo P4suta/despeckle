@@ -4,11 +4,12 @@
 # beyond Docker:
 #   - Temurin JDK 25 (FFM is final since 22; 25 is the current LTS).
 #   - Leptonica (liblept.so.5) — the despeckle core calls it through FFM.
-#   - poppler-utils (pdftoppm) + img2pdf — expand scan PDFs in / repack out.
-#   - PDF toolbox: qpdf, ghostscript, exiftool, and pikepdf (the finalize pass
-#     that sets the output to PDF 1.7 and inherits the source's metadata).
+#   - poppler-utils (pdfimages/pdfinfo) + jbig2enc + qpdf — the pure-Java
+#     `despeckle pipeline`/`topdf` shell these to go scan-PDF -> lossless-JBIG2
+#     PDF in one step (the old Python repack scripts are gone).
 #   - libwebp (cwebp + img2webp) — the report encodes its corpus charts as still
 #     WebP and the overlay flip-book as animated WebP.
+#   - python3 — only for scripts/check-tool-versions.py (the version-pin check).
 #   - The language-agnostic quality tools the repo already uses
 #     (typos, taplo, biome, yamlfmt, actionlint, lefthook).
 #
@@ -68,14 +69,10 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
-        ghostscript \
         git \
-        img2pdf \
-        libimage-exiftool-perl \
         libleptonica-dev \
         poppler-utils \
-        python3-pikepdf \
-        python3-pil \
+        python3 \
         qpdf \
         sudo \
         unzip \

@@ -41,7 +41,8 @@ public final class DespeckleCli {
     private static final String DESCRIPTION =
             "Remove scanner dust from bitonal Japanese-novel scans. To clean PDFs end-to-end"
                 + " (pdfimages -> despeckle -> lossless JBIG2), use 'despeckle pipeline <in.pdf>"
-                + " <out.pdf>'; a directory there batches every top-level *.pdf.";
+                + " <out.pdf>'; a directory there batches every top-level *.pdf. 'despeckle topdf"
+                + " <image-dir> <out.pdf>' packs already-cleaned pages into a JBIG2 PDF.";
 
     private final Options options = DespeckleOptions.build();
 
@@ -49,6 +50,9 @@ public final class DespeckleCli {
     public int run(String[] args) {
         if (args.length > 0 && "pipeline".equals(args[0])) {
             return new PipelineCli().run(Arrays.copyOfRange(args, 1, args.length));
+        }
+        if (args.length > 0 && "topdf".equals(args[0])) {
+            return new TopdfCli().run(Arrays.copyOfRange(args, 1, args.length));
         }
 
         CommandLine cmd;

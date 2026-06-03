@@ -2,9 +2,9 @@
 """Check that the dev image's pinned tools are still the latest upstream release.
 
 Reads each `ARG <TOOL>_VERSION=...` pin from the Dockerfile and compares it with
-the newest matching GitHub release. The apt-installed tools (qpdf, exiftool,
-ghostscript, img2pdf, poppler-utils) are not pinned here — they track the Ubuntu
-base and refresh on every image build — so they are intentionally not checked.
+the newest matching GitHub release. The apt-installed tools (qpdf, poppler-utils,
+webp) are not pinned here — they track the Ubuntu base and refresh on every image
+build — so they are intentionally not checked.
 
 Exit status is non-zero if any tool is behind (so `just tools-latest` and the
 scheduled CI job both go red when something needs bumping) or if a lookup fails.

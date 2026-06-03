@@ -21,6 +21,7 @@ final class DespeckleOptions {
     static final String REPORT = "report";
     static final String FLIPBOOK = "flipbook";
     static final String SUFFIX = "suffix";
+    static final String SOURCE = "source";
     static final String JOBS = "jobs";
     static final String FORMAT = "format";
     static final String GLOB = "glob";

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.github.p4suta.despeckle.TestImages;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
@@ -78,6 +79,37 @@ final class PipelineE2eTest {
         assertFalse(Files.exists(out.resolve("bad.pdf")), "the corrupt book produces no output");
         String index = Files.readString(reports.resolve("index.html"));
         assertTrue(index.contains("failed"), "the batch index lists the failure");
+    }
+
+    @Test
+    void topdfPacksAnImageDirIntoAJbig2Pdf(@TempDir Path tmp) throws Exception {
+        assumeTrue(toolAvailable("jbig2"), "jbig2 (jbig2enc) not installed");
+        Path cleaned = Files.createDirectories(tmp.resolve("cleaned"));
+        for (int i = 1; i <= 3; i++) {
+            boolean[][] img = TestImages.blank(200, 300);
+            TestImages.fillRect(img, 40, 50, 159, 239);
+            TestImages.writePbm(cleaned.resolve("page-%02d.pbm".formatted(i)), img);
+        }
+        Path out = tmp.resolve("book.pdf");
+
+        int code =
+                new DespeckleCli()
+                        .run(
+                                new String[] {
+                                    "topdf",
+                                    cleaned.toString(),
+                                    out.toString(),
+                                    "--dpi",
+                                    "300",
+                                    "--force"
+                                });
+
+        assertEquals(0, code, "topdf succeeds");
+        assertTrue(Files.exists(out), "the JBIG2 PDF is written");
+        try (PDDocument doc = Loader.loadPDF(out.toFile())) {
+            assertEquals(3, doc.getNumberOfPages(), "every page is packed");
+            assertTrue(firstImageIsJbig2(doc), "pages are lossless JBIG2");
+        }
     }
 
     private static boolean firstImageIsJbig2(PDDocument doc) throws IOException {

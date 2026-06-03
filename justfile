@@ -63,13 +63,12 @@ doctor:
         check lefthook   lefthook version; \
         check just       just --version; \
         check pdfimages  pdfimages -v; \
-        check img2pdf    img2pdf --version; \
+        check pdfinfo    pdfinfo -v; \
         check cwebp      cwebp -version; \
         check img2webp   img2webp -version; \
         check jbig2      jbig2 --version; \
         check qpdf       qpdf --version; \
-        check exiftool   exiftool -ver; \
-        check pikepdf    python3 -c "import pikepdf; print(pikepdf.__version__)"; \
+        check python3    python3 --version; \
     '
     @echo "==> doctor: ok"
 
@@ -185,7 +184,7 @@ lint: fmt-check typos-check actionlint
 ci: lint build
 
 # Check the dev image's pinned tools against their latest upstream release.
-# The apt tools (qpdf, exiftool, ...) track the Ubuntu base and are not pinned,
+# The apt tools (qpdf, poppler-utils, ...) track the Ubuntu base and are not pinned,
 # so only the ARG-pinned downloads (just, typos, jbig2enc, ...) are compared.
 tools-latest:
     {{docker_run}} python3 scripts/check-tool-versions.py
@@ -270,69 +269,53 @@ _hook-actionlint +files:
     echo "✗ actionlint found workflow problems (listed above); fix them before committing." >&2
     exit 1
 
-# ----- scan pipeline (pdfimages in; lossless JBIG2 out for pages, img2pdf for
-# color overlays) -----
+# ----- scan pipeline (lower-level image-mode stages; pure Java + pdfimages) -----
 #
-# Bitonal pages carry no reliable DPI (PBM has none; img2pdf would assume 96 and
-# stretch the page across ~30 cm), so the physical page size needs a real value.
+# `just pipeline` (above) does the whole PDF -> cleaned-PDF in one self-contained
+# step and is the recommended path. These are the lower-level stages of the
+# image-mode flow (`just extract` -> `just run` -> `just to-pdf`), all pure Java
+# now (the Python scripts are gone).
 #
-# For the JBIG2 page PDFs that value is read per-page from each image's own
-# resolution tag (stamped by `just extract`), so a mixed-resolution book — e.g. a
-# 600-dpi text and a 1200-dpi plate — comes out correctly with no flag. Setting
-# DESPECKLE_DPI forces a single size for every page; leaving it unset keeps
-# `jbig2_dpi` empty and jbig2-pdf.py auto-detects. The color-overlay PDFs go
-# through img2pdf, which has no per-image DPI source, so they keep `dpi`'s 600
-# default. Cleaned pages pack as lossless JBIG2; the color overlays, which JBIG2
-# cannot represent, stay on img2pdf.
+# DESPECKLE_DPI forces a single page-size resolution; left unset, `topdf` reads
+# each image's own resolution tag, so a mixed-resolution book — e.g. a 600-dpi
+# text with a 1200-dpi plate — comes out correctly with no flag.
 
-dpi := env_var_or_default("DESPECKLE_DPI", "600")
 jbig2_dpi := env_var_or_default("DESPECKLE_DPI", "")
 
 # Extract every embedded 1-bit image from a scan PDF as TIFF, preserving the
-# pixel grid exactly (no re-rasterise, no re-threshold). pdfimages decodes the
-# source codec; pdftoppm -mono was lossy on JBIG2 scans. The real scan
-# resolution lives only in the PDF page geometry, so a second pass stamps it
-# (pdfimages -list x-ppi) into each TIFF's resolution tag — then `just run`
-# needs no --dpi and the cleaned output stays correctly tagged.
+# pixel grid exactly (no re-rasterise, no re-threshold). For the cleaned-PDF flow
+# prefer `just pipeline`, which extracts, despeckles and repacks in one step and
+# detects the scan DPI itself. This standalone extract is for inspection: the
+# TIFFs carry pdfimages' default 72-dpi tag, so pass `--dpi` to `just run`.
 # Example: `just extract path/to/book.pdf private/scans/book`
 extract pdf out_dir:
     @mkdir -p {{out_dir}}
     {{pdfimages}} -tiff {{pdf}} {{out_dir}}/page
-    {{sh}} 'python3 scripts/stamp-dpi.py "{{pdf}}" "{{out_dir}}"'
     @echo "extracted $(ls {{out_dir}} | wc -l) TIFF pages to {{out_dir}}"
 
-# Roll a directory of cleaned bitonal pages into one PDF for human review, packed
-# as lossless JBIG2 (generic region coding — bit-exact, and smaller than the
-# source scan's own images), linearized for Fast Web View. Given the original
-# scan as the optional third arg, the output mirrors it: its metadata (Info dict
-# + XMP) and PDF version are inherited verbatim.
+# Roll a directory of cleaned bitonal pages into one lossless-JBIG2 PDF (pure Java
+# via `despeckle topdf`: jbig2 generic-region + qpdf --linearize). Each page keeps
+# its own resolution; given the original scan as the optional third arg, the
+# output inherits its metadata (Info dict + XMP) and PDF version.
 # Example: `just to-pdf out/book out/book.pdf book.pdf`
 to-pdf in out source="":
+    @test -x {{launcher}} || just assemble
     {{sh}} 'set -euo pipefail; \
         mkdir -p "$(dirname "{{out}}")"; \
-        python3 scripts/jbig2-pdf.py "{{in}}" "{{out}}" "{{source}}" "{{jbig2_dpi}}"'
+        args=(); [ -n "{{source}}" ] && args+=(--source "{{source}}"); \
+        [ -n "{{jbig2_dpi}}" ] && args+=(--dpi "{{jbig2_dpi}}"); \
+        {{launcher}} topdf "{{in}}" "{{out}}" "${args[@]}" --force'
 
 # Bulk-pack every artifacts/*-cleaned/ directory into artifacts/*-cleaned.pdf
-# (lossless JBIG2).
+# (lossless JBIG2, pure Java). The per-page overlays scrub-view is the report's
+# --flipbook (flipbook.webp), which replaced the old img2pdf overlay PDFs.
 to-all-pdfs:
-    {{docker_run}} bash -c "\
-        set -euo pipefail; \
+    @test -x {{launcher}} || just assemble
+    {{sh}} 'set -euo pipefail; \
+        dpi_args=(); [ -n "{{jbig2_dpi}}" ] && dpi_args+=(--dpi "{{jbig2_dpi}}"); \
         for dir in artifacts/*-cleaned; do \
-            [ -d \"\$dir\" ] || continue; \
-            out=\"\${dir}.pdf\"; \
-            echo \"==> \$dir -> \$out (dpi: ${DESPECKLE_DPI:-auto})\"; \
-            python3 scripts/jbig2-pdf.py \"\$dir\" \"\$out\" \"\" \"{{jbig2_dpi}}\"; \
-        done"
-
-# Pack every artifacts/*-report/overlay/ directory into one PDF so you can scrub
-# through and see which pixels despeckle removed (painted red over the original).
-to-overlay-pdfs:
-    {{docker_run}} bash -c "\
-        set -euo pipefail; \
-        for dir in artifacts/*-report; do \
-            [ -d \"\$dir/overlay\" ] || continue; \
-            book=\"\$(basename \"\$dir\" -report)\"; \
-            out=\"artifacts/\${book}-overlay.pdf\"; \
-            echo \"==> \$dir/overlay -> \$out @ {{dpi}} dpi\"; \
-            img2pdf --imgsize \"{{dpi}}dpix{{dpi}}dpi\" \"\$dir/overlay\"/*.png --output \"\$out\"; \
-        done"
+            [ -d "$dir" ] || continue; \
+            out="${dir}.pdf"; \
+            echo "==> $dir -> $out"; \
+            {{launcher}} topdf "$dir" "$out" "${dpi_args[@]}" --force; \
+        done'
