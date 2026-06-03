@@ -12,6 +12,7 @@ pdfimages.
 The optional source PDF's metadata is inherited; the optional dpi (else the
 image's own tag, else 300) sets the physical page size.
 """
+import concurrent.futures
 import glob
 import os
 import subprocess
@@ -40,6 +41,27 @@ def page_dpi(im, override):
     return dpi if dpi > 0 else 300.0
 
 
+def encode_one(path, dpi_override):
+    """Geometry + lossless JBIG2 for one page — the unit of parallel work.
+
+    Image.open reads only the TIFF header (size/dpi tags); no im.load(), so it is
+    cheap and each thread holds its own handle. The heavy part, the `jbig2`
+    subprocess, runs outside the GIL, so threads give real parallelism here.
+    """
+    with Image.open(path) as im:
+        width, height = im.size
+        dpi = page_dpi(im, dpi_override)
+    return encode_page(path), width, height, dpi
+
+
+def workers():
+    """Encode concurrency: DESPECKLE_JOBS if set, else all cores (cf. the Java --jobs)."""
+    requested = os.environ.get("DESPECKLE_JOBS")
+    if requested and requested.isdigit() and int(requested) > 0:
+        return int(requested)
+    return os.cpu_count() or 1
+
+
 def main():
     if len(sys.argv) < 3:
         sys.exit("usage: jbig2-pdf.py <image_dir> <out.pdf> [source.pdf] [dpi]")
@@ -51,12 +73,16 @@ def main():
     if not pages:
         sys.exit(f"no images found in {image_dir}")
 
+    # Encode every page in parallel — jbig2 runs outside the GIL — then assemble the
+    # PDF single-threaded in page order (pikepdf.Pdf is not safe for concurrent
+    # mutation). pool.map preserves input order, so page order is guaranteed and a
+    # failing page re-raises its CalledProcessError here, aborting as before.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers()) as pool:
+        encoded = list(pool.map(lambda p: encode_one(p, dpi_override), pages))
+
     pdf = pikepdf.Pdf.new()
-    for path in pages:
-        with Image.open(path) as im:
-            width, height = im.size
-            dpi = page_dpi(im, dpi_override)
-        image = Stream(pdf, encode_page(path))
+    for blob, width, height, dpi in encoded:
+        image = Stream(pdf, blob)
         image.Type = Name.XObject
         image.Subtype = Name.Image
         image.Width = width
