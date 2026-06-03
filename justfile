@@ -114,6 +114,14 @@ test:
 clean:
     {{gradlew}} clean {{gradle_flags}}
 
+# Wipe the project's incremental Gradle state (.gradle/). Recovery hatch: a build
+# killed mid-write (or other churn) can leave a stale path in the VFS cache that makes
+# Spotless reject build.gradle.kts with "target not within the project dir". This
+# clears it; dependencies live in .gradle-home and are untouched, so the next build
+# only re-snapshots — it does not re-download.
+reset-cache:
+    {{sh}} 'rm -rf .gradle'
+
 # ----- run -----
 
 # Process a directory of bitonal images via the installed launcher (no Gradle
