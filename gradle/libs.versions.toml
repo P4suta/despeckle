@@ -5,6 +5,7 @@
 # Verified against Maven Central (2026-06): 1.11.0 is the latest, released
 # 2025-11-08, and needs only Java 8+.
 commons-cli = "1.11.0"
+pdfbox = "3.0.7"
 slf4j = "2.0.17"
 junit = "6.1.0"
 errorprone = "2.49.0"
@@ -25,6 +26,9 @@ google-java-format = "1.35.0"
 
 [libraries]
 commons-cli = { module = "commons-cli:commons-cli", version.ref = "commons-cli" }
+# PDFBox assembles the cleaned lossless-JBIG2 output PDF (pipeline mode); xmpbox carries the source XMP.
+pdfbox = { module = "org.apache.pdfbox:pdfbox", version.ref = "pdfbox" }
+xmpbox = { module = "org.apache.pdfbox:xmpbox", version.ref = "pdfbox" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }

@@ -92,10 +92,10 @@ final class MainE2eTest {
         new Runner().run(config);
 
         assertTrue(Files.exists(report.resolve("index.html")), "index.html written");
-        assertTrue(Files.exists(report.resolve("before/p1.png")), "before panel written");
-        assertTrue(Files.exists(report.resolve("overlay/p1.png")), "overlay panel written");
-        assertTrue(Files.exists(report.resolve("after/p1.png")), "after panel written");
-        // The corpus diagnostics come out as WebP, or fall back to PNG when cwebp is absent.
+        // Panels (and corpus artifacts) come out as WebP, or fall back to PNG when cwebp is absent.
+        assertTrue(artifactExists(report, "before/p1"), "before panel written");
+        assertTrue(artifactExists(report, "overlay/p1"), "overlay panel written");
+        assertTrue(artifactExists(report, "after/p1"), "after panel written");
         assertTrue(artifactExists(report, "removed-heatmap"), "heatmap written");
         assertTrue(artifactExists(report, "corpus-convergence"), "convergence chart written");
         assertTrue(artifactExists(report, "removal-chart"), "removal chart written");
@@ -175,6 +175,10 @@ final class MainE2eTest {
         assertTrue(Files.exists(report.resolve("corpus-convergence.webp")), "convergence is webp");
         assertTrue(Files.exists(report.resolve("removal-chart.webp")), "removal chart is webp");
         assertFalse(Files.exists(report.resolve("removed-heatmap.png")), "no PNG left behind");
+        // The per-page panels are slimmed to WebP too.
+        assertTrue(Files.exists(report.resolve("before/p1.webp")), "before panel is webp");
+        assertTrue(Files.exists(report.resolve("overlay/p1.webp")), "overlay panel is webp");
+        assertFalse(Files.exists(report.resolve("before/p1.png")), "no PNG panel left behind");
     }
 
     @Test

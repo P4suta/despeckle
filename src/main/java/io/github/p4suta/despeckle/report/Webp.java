@@ -26,6 +26,33 @@ final class Webp {
     private Webp() {}
 
     /**
+     * Whether {@code cwebp} can be launched, so the report can decide once whether to slim its
+     * per-page panels to WebP or keep PNG (instead of trying — and warning — on every page).
+     *
+     * @return {@code true} if {@code cwebp -version} runs and exits 0
+     */
+    static boolean isAvailable() {
+        String bin = System.getProperty("despeckle.cwebp.path", "cwebp");
+        try {
+            Process process =
+                    new ProcessBuilder(bin, "-version")
+                            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                            .redirectError(ProcessBuilder.Redirect.DISCARD)
+                            .start();
+            if (!process.waitFor(30, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                return false;
+            }
+            return process.exitValue() == 0;
+        } catch (IOException e) {
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    /**
      * Convert {@code png} to {@code webp} losslessly.
      *
      * @param png the existing source PNG
