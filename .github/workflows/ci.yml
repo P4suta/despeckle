@@ -31,11 +31,13 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       # Leptonica is loaded at run time by the FFM layer, so the native library
-      # must be present on the runner for the tests.
-      - name: install Leptonica
+      # must be present on the runner for the tests. libwebp (cwebp + img2webp)
+      # lets the report tests exercise the real WebP encode path instead of the
+      # PNG fallback — keeping the dev image (Dockerfile) and CI in step.
+      - name: install Leptonica + libwebp
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libleptonica-dev
+          sudo apt-get install -y --no-install-recommends libleptonica-dev webp
       - uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165 # v5.0.0
         with:
           distribution: temurin
