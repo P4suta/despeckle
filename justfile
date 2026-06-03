@@ -64,6 +64,8 @@ doctor:
         check just       just --version; \
         check pdfimages  pdfimages -v; \
         check img2pdf    img2pdf --version; \
+        check cwebp      cwebp -version; \
+        check img2webp   img2webp -version; \
         check jbig2      jbig2 --version; \
         check qpdf       qpdf --version; \
         check exiftool   exiftool -ver; \

@@ -54,6 +54,8 @@ public final class Runner {
      * @param force whether to overwrite a non-empty output directory
      * @param options despeckle knobs
      * @param reportDir report output directory, or {@code null} for no report
+     * @param flipbook whether to assemble the animated-WebP overlay flip-book (needs {@code
+     *     reportDir} and libwebp's {@code img2webp})
      */
     public record Config(
             Path inputDir,
@@ -63,7 +65,8 @@ public final class Runner {
             int jobs,
             boolean force,
             ProcessOptions options,
-            @Nullable Path reportDir) {}
+            @Nullable Path reportDir,
+            boolean flipbook) {}
 
     /**
      * Aggregate outcome of a run.
@@ -91,7 +94,10 @@ public final class Runner {
         }
         LOG.info("despeckling {} page(s) with {} thread(s)", files.size(), config.jobs());
 
-        Report report = config.reportDir() == null ? null : Report.create(config.reportDir());
+        Report report =
+                config.reportDir() == null
+                        ? null
+                        : Report.create(config.reportDir(), config.flipbook());
 
         AtomicInteger done = new AtomicInteger();
         List<PageOutcome> outcomes;

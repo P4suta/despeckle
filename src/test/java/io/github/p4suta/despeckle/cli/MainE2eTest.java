@@ -1,6 +1,7 @@
 package io.github.p4suta.despeckle.cli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.p4suta.despeckle.TestImages;
@@ -43,7 +44,8 @@ final class MainE2eTest {
                         2,
                         true,
                         ProcessOptions.of(OptionalInt.of(300), OptionalInt.of(3), true),
-                        null);
+                        null,
+                        false);
         Runner.Summary summary = new Runner().run(config);
 
         assertEquals(3, summary.pages());
@@ -83,12 +85,66 @@ final class MainE2eTest {
                         1,
                         true,
                         ProcessOptions.defaults(),
-                        report);
+                        report,
+                        false);
         new Runner().run(config);
 
         assertTrue(Files.exists(report.resolve("index.html")), "index.html written");
         assertTrue(Files.exists(report.resolve("before/p1.png")), "before panel written");
         assertTrue(Files.exists(report.resolve("overlay/p1.png")), "overlay panel written");
         assertTrue(Files.exists(report.resolve("after/p1.png")), "after panel written");
+        // The corpus diagnostics come out as WebP, or fall back to PNG when cwebp is absent.
+        assertTrue(artifactExists(report, "removed-heatmap"), "heatmap written");
+        assertTrue(artifactExists(report, "corpus-convergence"), "convergence chart written");
+        assertTrue(artifactExists(report, "removal-chart"), "removal chart written");
+    }
+
+    @Test
+    void flipbookDegradesGracefullyWhenToolIsMissing(@TempDir Path tmp) throws Exception {
+        Path input = tmp.resolve("in");
+        Path output = tmp.resolve("out");
+        Path report = tmp.resolve("report");
+        Files.createDirectories(input);
+
+        boolean[][] img = TestImages.blank(32, 32);
+        TestImages.fillRect(img, 6, 6, 17, 25);
+        TestImages.dot(img, 28, 3);
+        TestImages.writePbm(input.resolve("p1.pbm"), img);
+
+        // Point img2webp at a binary that cannot exist, so the flip-book always degrades here
+        // regardless of whether libwebp is installed on the test host.
+        String previous = System.getProperty("despeckle.img2webp.path");
+        System.setProperty("despeckle.img2webp.path", tmp.resolve("no-such-img2webp").toString());
+        try {
+            Runner.Config config =
+                    new Runner.Config(
+                            input,
+                            output,
+                            OutputFormat.SAME,
+                            "*.pbm",
+                            1,
+                            true,
+                            ProcessOptions.defaults(),
+                            report,
+                            true);
+            Runner.Summary summary = new Runner().run(config);
+
+            assertEquals(1, summary.pages(), "the run still succeeds without img2webp");
+            assertTrue(Files.exists(report.resolve("index.html")), "index.html still written");
+            assertFalse(
+                    Files.exists(report.resolve("flipbook.webp")),
+                    "no flip-book when img2webp is unavailable");
+        } finally {
+            if (previous == null) {
+                System.clearProperty("despeckle.img2webp.path");
+            } else {
+                System.setProperty("despeckle.img2webp.path", previous);
+            }
+        }
+    }
+
+    private static boolean artifactExists(Path dir, String base) {
+        return Files.exists(dir.resolve(base + ".webp"))
+                || Files.exists(dir.resolve(base + ".png"));
     }
 }

@@ -7,6 +7,8 @@
 #   - poppler-utils (pdftoppm) + img2pdf — expand scan PDFs in / repack out.
 #   - PDF toolbox: qpdf, ghostscript, exiftool, and pikepdf (the finalize pass
 #     that sets the output to PDF 1.7 and inherits the source's metadata).
+#   - libwebp (cwebp + img2webp) — the report encodes its corpus charts as still
+#     WebP and the overlay flip-book as animated WebP.
 #   - The language-agnostic quality tools the repo already uses
 #     (typos, taplo, biome, yamlfmt, actionlint, lefthook).
 #
@@ -77,6 +79,7 @@ RUN apt-get update \
         qpdf \
         sudo \
         unzip \
+        webp \
     && rm -rf /var/lib/apt/lists/*
 
 # jbig2enc's `jbig2` binary, built in the stage above. It dynamically links the
