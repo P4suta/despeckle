@@ -112,7 +112,7 @@ A single Gradle module under `io.github.p4suta.despeckle`:
 | `core`    | `Leptonica` (the one FFM binding island), `Pix` (RAII handle), `Despeckler` (the pipeline) |
 | `runner`  | directory walk, fixed thread pool, over-removal guardrail     |
 | `report`  | before/overlay/after ONGs + `index.html`                      |
-| `cli`     | picocli front end                                             |
+| `cli`     | Apache Commons CLI front end                                  |
 
 `core` performs no directory or thread work, so a future GUI can reuse it
 unchanged.

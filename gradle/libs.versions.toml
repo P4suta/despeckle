@@ -2,7 +2,9 @@
 # Verified against Maven Central / the Gradle Plugin Portal (2026-05).
 
 [versions]
-picocli = "4.7.7"
+# Verified against Maven Central (2026-06): 1.11.0 is the latest, released
+# 2025-11-08, and needs only Java 8+.
+commons-cli = "1.11.0"
 slf4j = "2.0.17"
 junit = "6.1.0"
 errorprone = "2.49.0"
@@ -22,7 +24,7 @@ rewrite-java-security = "3.31.0"
 google-java-format = "1.35.0"
 
 [libraries]
-picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
+commons-cli = { module = "commons-cli:commons-cli", version.ref = "commons-cli" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }

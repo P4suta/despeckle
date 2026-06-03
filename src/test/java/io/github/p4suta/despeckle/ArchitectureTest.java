@@ -5,7 +5,7 @@ import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPac
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.simpleName;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
-import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;
+import static com.tngtech.archunit.library.GeneralCodingRules.ACCESS_STANDARD_STREAMS;
 import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_THROW_GENERIC_EXCEPTIONS;
 import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_USE_JAVA_UTIL_LOGGING;
 import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_USE_JODATIME;
@@ -164,10 +164,22 @@ class ArchitectureTest {
     static final ArchRule noGenericExceptions = NO_CLASSES_SHOULD_THROW_GENERIC_EXCEPTIONS;
 
     /**
-     * Nothing writes to {@code System.out}/{@code System.err}: user-facing output and progress go
-     * through SLF4J (and picocli, which lives in its own library outside this scan).
+     * Only the CLI front end ({@code DespeckleCli}) may touch {@code System.out}/{@code
+     * System.err}: it prints help, version and usage straight to the process streams like any
+     * normal CLI, while every other layer routes user-facing output and progress through SLF4J.
+     * (picocli used to hide this write inside its own library; Commons CLI hands it back to us, so
+     * the carve-out is named.)
      */
-    @ArchTest static final ArchRule noStandardStreams = NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;
+    @ArchTest
+    static final ArchRule noStandardStreams =
+            noClasses()
+                    .that()
+                    .doNotHaveFullyQualifiedName("io.github.p4suta.despeckle.cli.DespeckleCli")
+                    .should(ACCESS_STANDARD_STREAMS)
+                    .as("only the CLI front end (DespeckleCli) may access standard streams")
+                    .because(
+                            "help/version/usage go straight to the process streams like a normal"
+                                    + " CLI; every other layer logs through SLF4J");
 
     /**
      * Nullability is spoken in exactly one vocabulary — JSpecify — because that is what NullAway

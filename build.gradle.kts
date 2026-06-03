@@ -27,7 +27,7 @@ java {
 }
 
 dependencies {
-    implementation(libs.picocli)
+    implementation(libs.commons.cli)
     implementation(libs.slf4j.api)
     runtimeOnly(libs.slf4j.simple)
 
