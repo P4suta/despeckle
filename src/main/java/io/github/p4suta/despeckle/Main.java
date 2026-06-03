@@ -1,7 +1,6 @@
 package io.github.p4suta.despeckle;
 
-import io.github.p4suta.despeckle.cli.DespeckleCommand;
-import picocli.CommandLine;
+import io.github.p4suta.despeckle.cli.DespeckleCli;
 
 /** Process entry point. */
 public final class Main {
@@ -14,7 +13,7 @@ public final class Main {
      * @param args command-line arguments
      */
     public static void main(String[] args) {
-        int exitCode = new CommandLine(new DespeckleCommand()).execute(args);
+        int exitCode = new DespeckleCli().run(args);
         System.exit(exitCode);
     }
 }
