@@ -25,6 +25,11 @@ sh := if inside == "1" { "bash -lc" } else { docker_run + " bash -lc" }
 # the flags CI runs, so `just build` and CI cannot drift.
 gradle_flags := "--no-daemon --console=plain -Dorg.gradle.java.installations.auto-download=false"
 
+# The installed app launcher. `just run` execs this instead of `gradlew run`, skipping
+# ~6s of Gradle startup per book. `just assemble` (re)builds it via installDist, so
+# rebuild after editing code to keep the launcher in step with the sources.
+launcher := "build/install/despeckle/bin/despeckle"
+
 default:
     @just --list
 
@@ -95,9 +100,11 @@ build:
     @echo "==> ./gradlew build"
     {{gradlew}} build {{gradle_flags}}
 
-# Compile + assemble the runnable jar, skipping checks (fast inner loop).
+# Compile + stage the runnable launcher (build/install/despeckle/bin/despeckle),
+# skipping checks (fast inner loop). installDist transitively assembles the jar, then
+# `just run` execs the launcher with no Gradle startup. Re-run after editing code.
 assemble:
-    {{gradlew}} assemble {{gradle_flags}}
+    {{gradlew}} installDist {{gradle_flags}}
 
 # JUnit suite only.
 test:
@@ -109,10 +116,14 @@ clean:
 
 # ----- run -----
 
-# Process a directory of bitonal images. Extra args pass straight to the CLI:
+# Process a directory of bitonal images via the installed launcher (no Gradle
+# startup). Extra args pass straight to the CLI:
 #   just run scans/book out/book --report report/book --force
+# `just assemble` builds/refreshes the launcher, so rebuild after editing code; the
+# guard below auto-builds it on a clean checkout.
 run input output *args:
-    {{gradlew}} run {{gradle_flags}} --args="{{input}} {{output}} {{args}}"
+    @test -x {{launcher}} || just assemble
+    {{sh}} '{{launcher}} "{{input}}" "{{output}}" {{args}}'
 
 # Smoke check: process the bundled samples/ into artifacts/ with an HTML report.
 run-sample:
@@ -243,11 +254,19 @@ _hook-actionlint +files:
 # color overlays) -----
 #
 # Bitonal pages carry no reliable DPI (PBM has none; img2pdf would assume 96 and
-# stretch the page across ~30 cm), so the physical page size is set from
-# DESPECKLE_DPI (default 600). Cleaned pages pack as lossless JBIG2; the color
-# overlays, which JBIG2 cannot represent, stay on img2pdf.
+# stretch the page across ~30 cm), so the physical page size needs a real value.
+#
+# For the JBIG2 page PDFs that value is read per-page from each image's own
+# resolution tag (stamped by `just extract`), so a mixed-resolution book — e.g. a
+# 600-dpi text and a 1200-dpi plate — comes out correctly with no flag. Setting
+# DESPECKLE_DPI forces a single size for every page; leaving it unset keeps
+# `jbig2_dpi` empty and jbig2-pdf.py auto-detects. The color-overlay PDFs go
+# through img2pdf, which has no per-image DPI source, so they keep `dpi`'s 600
+# default. Cleaned pages pack as lossless JBIG2; the color overlays, which JBIG2
+# cannot represent, stay on img2pdf.
 
 dpi := env_var_or_default("DESPECKLE_DPI", "600")
+jbig2_dpi := env_var_or_default("DESPECKLE_DPI", "")
 
 # Extract every embedded 1-bit image from a scan PDF as TIFF, preserving the
 # pixel grid exactly (no re-rasterise, no re-threshold). pdfimages decodes the
@@ -271,7 +290,7 @@ extract pdf out_dir:
 to-pdf in out source="":
     {{sh}} 'set -euo pipefail; \
         mkdir -p "$(dirname "{{out}}")"; \
-        python3 scripts/jbig2-pdf.py "{{in}}" "{{out}}" "{{source}}" "{{dpi}}"'
+        python3 scripts/jbig2-pdf.py "{{in}}" "{{out}}" "{{source}}" "{{jbig2_dpi}}"'
 
 # Bulk-pack every artifacts/*-cleaned/ directory into artifacts/*-cleaned.pdf
 # (lossless JBIG2).
@@ -281,8 +300,8 @@ to-all-pdfs:
         for dir in artifacts/*-cleaned; do \
             [ -d \"\$dir\" ] || continue; \
             out=\"\${dir}.pdf\"; \
-            echo \"==> \$dir -> \$out @ {{dpi}} dpi\"; \
-            python3 scripts/jbig2-pdf.py \"\$dir\" \"\$out\" \"\" \"{{dpi}}\"; \
+            echo \"==> \$dir -> \$out (dpi: ${DESPECKLE_DPI:-auto})\"; \
+            python3 scripts/jbig2-pdf.py \"\$dir\" \"\$out\" \"\" \"{{jbig2_dpi}}\"; \
         done"
 
 # Pack every artifacts/*-report/overlay/ directory into one PDF so you can scrub
