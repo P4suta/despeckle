@@ -27,7 +27,10 @@ jobs:
         with:
           distribution: temurin
           java-version: "25"
+      # MIT/open-source cache provider — see the note in ci.yml's `build` job.
       - uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
+        with:
+          cache-provider: basic
       # `aggregateJavadoc` gathers every module's Javadoc into build/docs/javadoc (the root project
       # has no sources of its own). Javadoc only parses source; it does not load Leptonica, so the
       # native library is not needed here (unlike the test job in ci.yml).
