@@ -45,7 +45,7 @@ jobs:
       # `cache-provider: basic` selects v6.1.0's MIT/open-source cache provider
       # (@actions/cache) over the default `enhanced`, which loads the proprietary,
       # non-MIT `gradle-actions-caching` component governed by Gradle's separate ToS.
-      - uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
+      - uses: gradle/actions/setup-gradle@5e2ebd065dc2488b7a6ad670704656cbbe1e8f60 # v6.1.1
         with:
           cache-provider: basic
       # `build` runs the entire quality gate: Error Prone (compileJava),
@@ -106,7 +106,7 @@ jobs:
           distribution: temurin
           java-version: "25"
       # MIT/open-source cache provider — see the note in the `build` job above.
-      - uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
+      - uses: gradle/actions/setup-gradle@5e2ebd065dc2488b7a6ad670704656cbbe1e8f60 # v6.1.1
         with:
           cache-provider: basic
       # Emits the proposed patch to build/reports/rewrite/rewrite.patch and exits
